@@ -139,16 +139,26 @@ local comp_screw, comp_gear, comp_wire = 1, 2, 3
 function c_triple()
 	local components = { comp_screw, comp_gear, comp_wire }
 
+	function try_swap()
+		if btnp(btn_x) then
+			swap(components, 1, 2)
+			swap(components, 1, 3)
+		end
+	end
+
+	function try_move(triple)
+		local hor = btnp(btn_left) and -8 or (btnp(btn_right) and 8 or 0)
+		triple.x = max(2, min(triple.x + hor, 40))
+	end
+
 	return merge_into({
 		x = 2,
 		y = 2,
 
 		update = function(self)
 			self.animator:update()
-			if btnp(btn_x) then
-				swap(components, 1, 2)
-				swap(components, 1, 3)
-			end
+			try_swap()
+			try_move(self)
 		end,
 
 		draw = function(self)
