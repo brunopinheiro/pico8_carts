@@ -5,20 +5,19 @@ __lua__
 --   by brunopinheiro
 
 -- game loop
-local board, triple
+local board
 function _init()
 	board = c_board()
-	triple = c_triple()
+	board:set_active(c_triple(board))
 end
 
 function _update60()
-	triple:update()
+	board:update()
 end
 
 function _draw()
 	cls()
 	board:draw()
-	triple:draw()
 end
 
 --core
@@ -36,6 +35,10 @@ function swap(t, k1, k2)
 	local backup = t[k1]
 	t[k1] = t[k2]
 	t[k2] = backup
+end
+
+function try(t, method)
+	if t then t[method](t) end
 end
 
 function c_animator()
@@ -94,6 +97,10 @@ function c_gameobject(args)
 			)
 		end,
 
+		stop = function(self, name)
+			self.animator:stop(name)
+		end,
+
 		animate = function(self, name, args)
 			local loops = args.loops or 0
 			local ease = args.ease or linear_ease
@@ -133,10 +140,39 @@ function c_gameobject(args)
 end
 
 -->8
--- components
+-- board and components
+function c_board()
+	local active_triple
+
+	return merge_into({
+		bounds = function()
+			return { min_x=2, max_x=40, max_y=80 }
+		end,
+
+		set_active = function(self, triple)
+			active_triple = triple
+		end,
+
+		glue = function(self, triple)
+			active_triple = nil
+		end,
+
+		update = function()
+			try(active_triple, 'update')
+		end,
+
+		draw = function()
+			try(active_triple, 'draw')
+			rect(0, 0, 49, 105, 13)
+			rect(1, 1, 48, 104, 6)
+		end
+	}, c_gameobject())
+end
+
 local comp_screw, comp_gear, comp_wire = 1, 2, 3
 
-function c_triple()
+function c_triple(board)
+	local x, y, should_fall, gluing = 2, -30, true, false
 	local components = { comp_screw, comp_gear, comp_wire }
 
 	function try_swap()
@@ -146,37 +182,46 @@ function c_triple()
 		end
 	end
 
-	function try_move(triple)
+	function hor_mov(bounds)
 		local hor = btnp(btn_left) and -8 or (btnp(btn_right) and 8 or 0)
-		triple.x = max(2, min(triple.x + hor, 40))
+		x = max(bounds.min_x, min(x + hor, bounds.max_x))
+	end
+
+	function ver_mov(triple, bounds)
+		if not should_fall then return end
+
+		should_fall = false
+		gluing = false
+		triple:delayed('fall', { duration=1, callback=function() should_fall = true end })
+		triple:stop('glue')
+		y = min(bounds.max_y, y + 8)
+	end
+
+	function try_move(triple)
+		local bounds = board:bounds()
+		hor_mov(bounds)
+
+		if y < bounds.max_y then
+			ver_mov(triple, bounds)
+		else
+			if not gluing then
+				triple:delayed('glue', { duration=1, callback=function() board:glue(triple) end })
+				gluing = true
+			end
+		end
 	end
 
 	return merge_into({
-		x = 2,
-		y = 2,
-
 		update = function(self)
 			self.animator:update()
 			try_swap()
 			try_move(self)
 		end,
 
-		draw = function(self)
-			for i, comp in pairs(components) do
-				spr(comp, self.x, self.y + (i - 1) * 8)
-			end
-		end
-	}, c_gameobject())
-end
-
--- board
-function c_board()
-	local x, y, w, h = 1, 1, 48, 104
-
-	return merge_into({
 		draw = function()
-			rect(x-1, y-1, w+1, h+1, 13)
-			rect(x, y, w, h, 6)
+			for i, comp in pairs(components) do
+				spr(comp, x, y + (i - 1) * 8)
+			end
 		end
 	}, c_gameobject())
 end
