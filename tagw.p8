@@ -24,11 +24,12 @@ end
 local btn_left, btn_right, btn_up, btn_down, btn_o, btn_x = 0, 1, 2, 3, 4, 5
 
 function merge_into(origin, target)
-	local result = target or {}
-	for k, v in pairs(origin) do
-		result[k] = v
-	end
-	return result
+	for k, v in pairs(origin) do target[k] = v end
+	return target
+end
+
+function merge(t1, t2)
+	return merge_into(t1, merge_into(t2, {}))
 end
 
 function swap(t, k1, k2)
@@ -45,8 +46,8 @@ function c_animator()
 	return {
 		animations = {},
 
-		animate = function(self, name, target, update, callback)
-			self.animations[name]={ target=target, update=update, callback=callback }
+		add = function(self, name, update, callback)
+			self.animations[name]={ update=update, callback=callback }
 		end,
 
 		stop = function(self, name)
@@ -60,7 +61,7 @@ function c_animator()
 			end
 			for k, anim in pairs(completed) do
 				self:stop(k)
-				if anim.callback then anim.callback(anim.target) end
+				try(anim, 'callback')
 			end
 		end
 	}
@@ -70,73 +71,55 @@ function linear_ease(initial, final, time, duration)
 	return (final - initial) * time/duration + initial
 end
 
-function c_gameobject(args)
-	return merge_into(args or {}, {
-		animator = c_animator(),
+function delayed(animator, name, args)
+	local it = time()
+	local loops = args.loops or 0
+	local callback = args.callback or printh('error: callback for delayed execution is required')
+	local duration = args.duration or printh('error: duration for delayed execution is required')
 
-		update = function(self)
-			self.animator:update()
-		end,
+	animator:add(
+		name,
+		function() return time() - it < duration end,
+		(loops ~= 0) and function()
+			callback()
+			delayed(animator, name, merge(args, { loops=loops - 1 }))
+		end or callback
+	)
+end
 
-		draw = function() end,
+function animate(animator, name, args)
+	local loops = args.loops or 0
+	local ease = args.ease or linear_ease
+	local target = args.target or printh('error: target for animation is required')
+	local attr = args.attr or printh('error: attr for animation is required')
+	local duration = args.duration or printh('error: duration for animation is required')
+	local callback = args.callback
+	local it = time()
+	local ov = target[attr]
+	local fv = args.fv or printh('error: fv for animation is required')
+	local inverted_loop = args.inverted_loop or false
 
-		delayed = function(self, name, args)
-			local it = time()
-			local loops = args.loops or 0
-			local callback = args.callback or printh('error: callback for delayed execution is required')
-			local duration = args.duration or printh('error: duration for delayed execution is required')
+	local ease_update = function()
+		local td = time() - it
+		target[attr]=ease(ov, fv, td, duration)
+		return td < duration
+	end
 
-			self.animator:animate(
-				name,
-				nil,
-				function() return time() - it < duration end,
-				(loops ~= 0) and function()
-					callback()
-					self:delayed(name, merge(args, { loops=loops - 1 }))
-				end or callback
-			)
-		end,
-
-		stop = function(self, name)
-			self.animator:stop(name)
-		end,
-
-		animate = function(self, name, args)
-			local loops = args.loops or 0
-			local ease = args.ease or linear_ease
-			local target = args.target or self
-			local attr = args.attr or printh('error: attr for animation is required')
-			local duration = args.duration or printh('error: duration for animation is required')
-			local callback = args.callback
-			local it = time()
-			local ov = target[attr]
-			local fv = args.fv or printh('error: fv for animation is required')
-			local inverted_loop = args.inverted_loop or false
-
-   		local ease_update = function()
-     		local td = time() - it
-     		target[attr]=ease(ov, fv, td, duration)
-     		return td < duration
-   		end
-
-   		local loop_callback = function()
-				if inverted_loop then
-					fv = ov
-					ov = args.fv
-				end
-
-				target[attr] = ov
-				self:animate(name, merge(args, { loops=loops - 1, fv=fv }))
-			end
-
-			self.animator:animate(
-				name,
-				target,
-				ease_update
-				(loops ~= 0) and loop_callback or callback
-			)
+	local loop_callback = function()
+		if inverted_loop then
+			fv = ov
+			ov = args.fv
 		end
-	})
+
+		target[attr] = ov
+		animate(animator, name, merge(args, { loops=loops - 1, fv=fv }))
+	end
+
+	animator:add(
+		name,
+		ease_update
+		(loops ~= 0) and loop_callback or callback
+	)
 end
 
 -->8
@@ -144,7 +127,7 @@ end
 function c_board()
 	local active_triple
 
-	return merge_into({
+	return {
 		bounds = function()
 			return { min_x=2, max_x=40, max_y=80 }
 		end,
@@ -166,12 +149,13 @@ function c_board()
 			rect(0, 0, 49, 105, 13)
 			rect(1, 1, 48, 104, 6)
 		end
-	}, c_gameobject())
+	}
 end
 
 local comp_screw, comp_gear, comp_wire = 1, 2, 3
 
 function c_triple(board)
+	local animator = c_animator()
 	local x, y, should_fall, gluing = 2, -30, true, false
 	local components = { comp_screw, comp_gear, comp_wire }
 
@@ -192,8 +176,8 @@ function c_triple(board)
 
 		should_fall = false
 		gluing = false
-		triple:delayed('fall', { duration=1, callback=function() should_fall = true end })
-		triple:stop('glue')
+		delayed(animator, 'fall', { duration=1, callback=function() should_fall = true end })
+		animator:stop('glue')
 		y = min(bounds.max_y, y + 8)
 	end
 
@@ -205,15 +189,15 @@ function c_triple(board)
 			ver_mov(triple, bounds)
 		else
 			if not gluing then
-				triple:delayed('glue', { duration=1, callback=function() board:glue(triple) end })
+				delayed(animator, 'glue', { duration=1, callback=function() board:glue(triple) end })
 				gluing = true
 			end
 		end
 	end
 
-	return merge_into({
+	return {
 		update = function(self)
-			self.animator:update()
+			animator:update()
 			try_swap()
 			try_move(self)
 		end,
@@ -223,7 +207,7 @@ function c_triple(board)
 				spr(comp, x, y + (i - 1) * 8)
 			end
 		end
-	}, c_gameobject())
+	}
 end
 
 __gfx__
