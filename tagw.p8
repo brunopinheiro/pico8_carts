@@ -5,6 +5,7 @@ __lua__
 --   by brunopinheiro
 
 -- game loop
+printh('::::: new :::::')
 local board
 function _init()
 	board = c_board()
@@ -156,7 +157,7 @@ local comp_screw, comp_gear, comp_wire = 1, 2, 3
 
 function c_triple(board)
 	local animator = c_animator()
-	local x, y, should_fall, gluing = 2, -30, true, false
+	local x, y, status = 2, -30, 'fall'
 	local components = { comp_screw, comp_gear, comp_wire }
 
 	function try_swap()
@@ -166,32 +167,30 @@ function c_triple(board)
 		end
 	end
 
-	function hor_mov(bounds)
+	function try_speedup()
+		status = (btn(btn_down) and status == 'idle') and 'speed-up' or status
+	end
+
+	function move(triple)
+		local bounds = board:bounds()
+
+		-- horizontal
 		local hor = btnp(btn_left) and -8 or (btnp(btn_right) and 8 or 0)
 		x = max(bounds.min_x, min(x + hor, bounds.max_x))
-	end
 
-	function ver_mov(triple, bounds)
-		if not should_fall then return end
-
-		should_fall = false
-		gluing = false
-		delayed(animator, 'fall', { duration=1, callback=function() should_fall = true end })
-		animator:stop('glue')
-		y = min(bounds.max_y, y + 8)
-	end
-
-	function try_move(triple)
-		local bounds = board:bounds()
-		hor_mov(bounds)
-
-		if y < bounds.max_y then
-			ver_mov(triple, bounds)
-		else
-			if not gluing then
-				delayed(animator, 'glue', { duration=1, callback=function() board:glue(triple) end })
-				gluing = true
-			end
+		-- vertical
+		if status == 'fall' then
+			y = min(bounds.max_y, y + 8)
+			status = y < bounds.max_y and 'float' or 'glue'
+		elseif status == 'float' then
+			delayed(animator, 'fall', { duration=1, callback=function() status = 'fall' end })
+			status = 'idle'
+		elseif status == 'glue' then
+			delayed(animator, 'glue', { duration=1, callback=function() board:glue(triple) end })
+			status = 'idle'
+		elseif status == 'speed-up' then
+			delayed(animator, 'fall', { duration=0.01, callback=function() status = 'fall' end })
+			status = 'speed-idle'
 		end
 	end
 
@@ -199,7 +198,8 @@ function c_triple(board)
 		update = function(self)
 			animator:update()
 			try_swap()
-			try_move(self)
+			try_speedup()
+			move(self)
 		end,
 
 		draw = function()
