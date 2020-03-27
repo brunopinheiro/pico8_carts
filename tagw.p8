@@ -6,10 +6,10 @@ __lua__
 
 -- game loop
 printh('::::: new :::::')
-local board
+local board, factory
 function _init()
-	board = c_board()
-	board:set_active(c_triple(board))
+	board = new_board(new_factory())
+	board:turn_on()
 end
 
 function _update60()
@@ -24,13 +24,11 @@ end
 --core
 local btn_left, btn_right, btn_up, btn_down, btn_o, btn_x = 0, 1, 2, 3, 4, 5
 
-function merge_into(origin, target)
-	for k, v in pairs(origin) do target[k] = v end
-	return target
-end
-
-function merge(t1, t2)
-	return merge_into(t1, merge_into(t2, {}))
+function merged(t1, t2)
+	local new = {}
+	for k, v in pairs(t1) do new[k] = v end
+	for k, v in pairs(t2) do new[k] = v end
+	return new
 end
 
 function swap(t, k1, k2)
@@ -43,19 +41,19 @@ function try(t, method)
 	if t then t[method](t) end
 end
 
-function c_animator()
+function new_animator()
 	return {
-		animations = {},
+		animations={},
 
-		add = function(self, name, update, callback)
+		add=function(self, name, update, callback)
 			self.animations[name]={ update=update, callback=callback }
 		end,
 
-		stop = function(self, name)
+		stop=function(self, name)
 			self.animations[name]=nil
 		end,
 
-		update = function(self)
+		update=function(self)
 			local completed={}
 			for k, anim in pairs(self.animations) do
 				if not anim.update() then completed[k] = anim end
@@ -83,7 +81,7 @@ function delayed(animator, name, args)
 		function() return time() - it < duration end,
 		(loops ~= 0) and function()
 			callback()
-			delayed(animator, name, merge(args, { loops=loops - 1 }))
+			delayed(animator, name, merged(args, { loops=loops - 1 }))
 		end or callback
 	)
 end
@@ -113,7 +111,7 @@ function animate(animator, name, args)
 		end
 
 		target[attr] = ov
-		animate(animator, name, merge(args, { loops=loops - 1, fv=fv }))
+		animate(animator, name, merged(args, { loops=loops - 1, fv=fv }))
 	end
 
 	animator:add(
@@ -125,40 +123,59 @@ end
 
 -->8
 -- board and components
-function c_board()
+function new_board(factory)
 	local active_triple
+	local glued_components = {}
 
 	return {
-		bounds = function()
-			return { min_x=2, max_x=40, max_y=80 }
+		turn_on=function(self)
+			active_triple = factory:produce(self)
 		end,
 
-		set_active = function(self, triple)
-			active_triple = triple
+		bounds=function()
+			return { min_x=2, max_x=42, max_y=72 }
 		end,
 
-		glue = function(self, triple)
-			active_triple = nil
+		glue=function(self)
+			local pos = active_triple:pos()
+			for i=1, 3 do
+				add(glued_components, {
+					sprite=active_triple:component(i),
+					x=pos.x,
+					y=pos.y + (i-1) * 8
+				})
+			end
+			active_triple = factory:produce(self)
 		end,
 
-		update = function()
+		update=function()
 			try(active_triple, 'update')
 		end,
 
-		draw = function()
+		draw=function()
 			try(active_triple, 'draw')
-			rect(0, 0, 49, 105, 13)
-			rect(1, 1, 48, 104, 6)
+			for component in all(glued_components) do
+				spr(component.sprite, component.x, component.y)
+			end
+			rect(0, 0, 50, 98, 13)
+			rect(1, 1, 49, 97, 6)
 		end
 	}
 end
 
 local comp_screw, comp_gear, comp_wire = 1, 2, 3
 
-function c_triple(board)
-	local animator = c_animator()
+function new_factory()
+	return {
+		produce=function(self, board)
+			return new_triple(board, { comp_screw, comp_gear, comp_wire })
+		end
+	}
+end
+
+function new_triple(board, components)
+	local animator = new_animator()
 	local x, y, status = 2, -30, 'fall'
-	local components = { comp_screw, comp_gear, comp_wire }
 
 	function try_swap()
 		if btnp(btn_x) then
@@ -171,7 +188,7 @@ function c_triple(board)
 		status = (btn(btn_down) and status == 'idle') and 'speed-up' or status
 	end
 
-	function move(triple)
+	function move()
 		local bounds = board:bounds()
 
 		-- horizontal
@@ -186,7 +203,7 @@ function c_triple(board)
 			delayed(animator, 'fall', { duration=1, callback=function() status = 'fall' end })
 			status = 'idle'
 		elseif status == 'glue' then
-			delayed(animator, 'glue', { duration=1, callback=function() board:glue(triple) end })
+			delayed(animator, 'glue', { duration=1, callback=function() board:glue() end })
 			status = 'idle'
 		elseif status == 'speed-up' then
 			delayed(animator, 'fall', { duration=0.01, callback=function() status = 'fall' end })
@@ -195,14 +212,20 @@ function c_triple(board)
 	end
 
 	return {
-		update = function(self)
+		pos=function() return {x=x, y=y} end,
+
+		component=function(self, index)
+			return components[index]
+		end,
+
+		update=function()
 			animator:update()
 			try_swap()
 			try_speedup()
-			move(self)
+			move()
 		end,
 
-		draw = function()
+		draw=function()
 			for i, comp in pairs(components) do
 				spr(comp, x, y + (i - 1) * 8)
 			end
