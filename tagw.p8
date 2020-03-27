@@ -149,7 +149,7 @@ function new_board(factory)
 		end,
 
 		move_bounds=function(x, y)
-			return { 
+			return {
 				left=(contains(x - 8, y) or x - 8 < 2) and 0 or -8,
 				right=(contains(x + 8, y) or x + 8 > 42) and 0 or 8,
 				bottom=(contains(x, y + 8) or y + 8 > 98) and 0 or 8
@@ -189,7 +189,9 @@ end
 
 function new_triple(board, components)
 	local animator = new_animator()
-	local x, y, status = 2, -30, 'fall'
+	local x, y  = 2, -30
+	local fall_locked, fall_speedup = false, 0
+	local glue_attempts = 0
 
 	function try_swap()
 		if btnp(btn_x) then
@@ -199,7 +201,30 @@ function new_triple(board, components)
 	end
 
 	function try_speedup()
-		status = (btn(btn_down) and status == 'idle') and 'speed-up' or status
+		if btn(btn_down) then
+			if fall_locked and fall_speedup == 0 then
+				fall_locked = false
+			end
+			fall_speedup = 0.95
+		else
+			fall_speedup = 0
+		end
+	end
+
+	function try_glue(bounds)
+		if bounds.bottom == 0 then
+			if glue_attempts < 2 then
+				glue_attempts = glue_attempts + 1
+			else
+				board:glue()
+			end
+		else
+			glue_attempts = 0
+		end
+	end
+
+	function fall_delay()
+		return glue_attempts > 0 and 0.8 or 1 - fall_speedup
 	end
 
 	function move()
@@ -210,18 +235,11 @@ function new_triple(board, components)
 		x = x + hor
 
 		-- vertical
-		if status == 'fall' then
+		if not fall_locked then
+			fall_locked = true
 			y = y + bounds.bottom
-			status = bounds.bottom ~= 0 and 'float' or 'glue'
-		elseif status == 'float' then
-			delayed(animator, 'fall', { duration=1, callback=function() status = 'fall' end })
-			status = 'idle'
-		elseif status == 'glue' then
-			delayed(animator, 'glue', { duration=1, callback=function() board:glue() end })
-			status = 'idle'
-		elseif status == 'speed-up' then
-			delayed(animator, 'fall', { duration=0.01, callback=function() status = 'fall' end })
-			status = 'speed-idle'
+			try_glue(bounds)
+			delayed(animator, 'fall', { duration=fall_delay(), callback=function() fall_locked = false end })
 		end
 	end
 
