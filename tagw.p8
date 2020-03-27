@@ -127,25 +127,39 @@ function new_board(factory)
 	local active_triple
 	local glued_components = {}
 
+	function pos_to_coords(x, y)
+		return 'c'..x..'r'..y
+	end
+
+	function contains(x, y)
+		return glued_components[pos_to_coords(x, y)]
+	end
+
+	function collect(index, x, y)
+		glued_components[pos_to_coords(x, y)] = {
+			sprite=active_triple.component(index),
+			x=x,
+			y=y
+		}
+	end
+
 	return {
 		turn_on=function(self)
-			active_triple = factory:produce(self)
+			active_triple = factory.produce(self)
 		end,
 
-		bounds=function()
-			return { min_x=2, max_x=42, max_y=72 }
+		move_bounds=function(x, y)
+			return { 
+				left=(contains(x - 8, y) or x - 8 < 2) and 0 or -8,
+				right=(contains(x + 8, y) or x + 8 > 42) and 0 or 8,
+				bottom=(contains(x, y + 8) or y + 8 > 98) and 0 or 8
+			}
 		end,
 
 		glue=function(self)
 			local pos = active_triple:pos()
-			for i=1, 3 do
-				add(glued_components, {
-					sprite=active_triple:component(i),
-					x=pos.x,
-					y=pos.y + (i-1) * 8
-				})
-			end
-			active_triple = factory:produce(self)
+			for i=1, 3 do collect(i, pos.x, pos.y + (i-1) * 8) end
+			self:turn_on()
 		end,
 
 		update=function()
@@ -154,11 +168,11 @@ function new_board(factory)
 
 		draw=function()
 			try(active_triple, 'draw')
-			for component in all(glued_components) do
+			for _, component in pairs(glued_components) do
 				spr(component.sprite, component.x, component.y)
 			end
-			rect(0, 0, 50, 98, 13)
-			rect(1, 1, 49, 97, 6)
+			rect(0, 0, 50, 108, 13)
+			rect(1, 1, 49, 107, 6)
 		end
 	}
 end
@@ -167,7 +181,7 @@ local comp_screw, comp_gear, comp_wire = 1, 2, 3
 
 function new_factory()
 	return {
-		produce=function(self, board)
+		produce=function(board)
 			return new_triple(board, { comp_screw, comp_gear, comp_wire })
 		end
 	}
@@ -189,16 +203,16 @@ function new_triple(board, components)
 	end
 
 	function move()
-		local bounds = board:bounds()
+		local bounds = board.move_bounds(x, y + 16)
 
 		-- horizontal
-		local hor = btnp(btn_left) and -8 or (btnp(btn_right) and 8 or 0)
-		x = max(bounds.min_x, min(x + hor, bounds.max_x))
+		local hor = btnp(btn_left) and bounds.left or (btnp(btn_right) and bounds.right or 0) 
+		x = x + hor
 
 		-- vertical
 		if status == 'fall' then
-			y = min(bounds.max_y, y + 8)
-			status = y < bounds.max_y and 'float' or 'glue'
+			y = y + bounds.bottom
+			status = bounds.bottom ~= 0 and 'float' or 'glue'
 		elseif status == 'float' then
 			delayed(animator, 'fall', { duration=1, callback=function() status = 'fall' end })
 			status = 'idle'
@@ -214,7 +228,7 @@ function new_triple(board, components)
 	return {
 		pos=function() return {x=x, y=y} end,
 
-		component=function(self, index)
+		component=function(index)
 			return components[index]
 		end,
 
