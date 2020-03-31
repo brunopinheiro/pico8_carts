@@ -137,7 +137,7 @@ function new_board(factory)
 
 	function collect(index, x, y)
 		glued_components[pos_to_coords(x, y)] = {
-			sprite=active_triple.component(index),
+			sprite=active_triple.component(index).s,
 			x=x,
 			y=y
 		}
@@ -156,6 +156,14 @@ function new_board(factory)
 			}
 		end,
 
+		max_y=function(x)
+			local y = 98
+			for _, component in pairs(glued_components) do
+				y = component.x == x and min(y, component.y - 8) or y
+			end
+			return y
+		end,
+
 		glue=function(self)
 			local pos = active_triple:pos()
 			for i=1, 3 do collect(i, pos.x, pos.y + (i-1) * 8) end
@@ -167,17 +175,17 @@ function new_board(factory)
 		end,
 
 		draw=function()
-			try(active_triple, 'draw')
 			for _, component in pairs(glued_components) do
 				spr(component.sprite, component.x, component.y)
 			end
+			try(active_triple, 'draw')
 			rect(0, 0, 50, 108, 13)
 			rect(1, 1, 49, 107, 6)
 		end
 	}
 end
 
-local comp_screw, comp_gear, comp_wire = 1, 2, 3
+local comp_screw, comp_gear, comp_wire = {s=1, c=6}, {s=2, c=9}, {s=3, c=14}
 
 function new_factory()
 	return {
@@ -258,8 +266,12 @@ function new_triple(board, components)
 		end,
 
 		draw=function()
+			local max_y_preview = board.max_y(x)
+
 			for i, comp in pairs(components) do
-				spr(comp, x, y + (i - 1) * 8)
+				spr(comp.s, x, y + (i - 1) * 8)
+				local comp_preview_y = max_y_preview - (3 - i) * 8
+				rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
 			end
 		end
 	}
