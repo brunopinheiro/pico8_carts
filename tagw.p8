@@ -199,6 +199,7 @@ function new_triple(board, components)
 	local animator = new_animator()
 	local x, y  = 2, -30
 	local fall_locked, fall_speedup = false, 0
+	local hor_locked = false
 	local glue_attempts = 0
 
 	function try_swap()
@@ -216,6 +217,16 @@ function new_triple(board, components)
 			fall_speedup = 0.95
 		else
 			fall_speedup = 0
+		end
+	end
+
+	function try_instant_glue()
+		if btnp(btn_o) then
+			y = board.max_y(x) - 16
+			fall_locked = true
+			hor_locked = true
+			animator:stop('fall')
+			delayed(animator, 'instant_glue', { duration=0.5, callback=function() board:glue() end })
 		end
 	end
 
@@ -239,8 +250,10 @@ function new_triple(board, components)
 		local bounds = board.move_bounds(x, y + 16)
 
 		-- horizontal
-		local hor = btnp(btn_left) and bounds.left or (btnp(btn_right) and bounds.right or 0) 
-		x = x + hor
+		if not hor_locked then
+			local hor = btnp(btn_left) and bounds.left or (btnp(btn_right) and bounds.right or 0)
+			x = x + hor
+		end
 
 		-- vertical
 		if not fall_locked then
@@ -262,6 +275,7 @@ function new_triple(board, components)
 			animator:update()
 			try_swap()
 			try_speedup()
+			try_instant_glue()
 			move()
 		end,
 
