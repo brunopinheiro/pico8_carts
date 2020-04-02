@@ -143,6 +143,16 @@ function new_board(factory)
 		}
 	end
 
+	function check_game_over()
+		for _, component in pairs(glued_components) do
+			if component.y < -8 then
+				return true
+			end
+		end
+
+		return false
+	end
+
 	return {
 		turn_on=function(self)
 			active_triple = factory.produce(self)
@@ -167,7 +177,11 @@ function new_board(factory)
 		glue=function(self)
 			local pos = active_triple:pos()
 			for i=1, 3 do collect(i, pos.x, pos.y + (i-1) * 8) end
-			self:turn_on()
+			if not check_game_over() then
+				self:turn_on()
+			else
+				printh('game over')
+			end
 		end,
 
 		update=function()
