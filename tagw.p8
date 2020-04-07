@@ -125,7 +125,9 @@ end
 -- board and components
 function new_board(factory)
 	local active_triple
+	local animator = new_animator()
 	local glued_components = {}
+	local ix, iy, fx, fy = 2, 2, 42, 98
 
 	function pos_to_coords(x, y)
 		return 'c'..x..'r'..y
@@ -135,9 +137,9 @@ function new_board(factory)
 		return glued_components[pos_to_coords(x, y)]
 	end
 
-	function collect(index, x, y)
+	function glue_component(sprite, x, y)
 		glued_components[pos_to_coords(x, y)] = {
-			sprite=active_triple.component(index).s,
+			sprite=sprite,
 			x=x,
 			y=y
 		}
@@ -153,30 +155,98 @@ function new_board(factory)
 		return false
 	end
 
+	function component_at(x, y)
+		return glued_components[pos_to_coords(x, y)]
+	end
+
+	function max_y(x)
+		for y=fy, iy, -8 do
+			if not component_at(x, y) then return y end
+		end
+
+		return iy
+	end
+
+	function collect()
+		for i, component in pairs(glued_components) do
+			collect_direction(component, 8, -8, { component })
+			collect_direction(component, 8,  0, { component })
+			collect_direction(component, 8,  8, { component })
+			collect_direction(component, 0,  8, { component })
+		end
+
+		for _, component in pairs(glued_components) do
+			if component.marked then remove_component(component) end
+		end
+	end
+
+	function gravity()
+		local moved = false
+
+		for y=fy, iy, -8 do
+			for x=ix, fx, 8 do
+				moved = gravity_component(component_at(x, y)) or moved
+			end
+		end
+
+		return moved
+	end
+
+	function remove_component(component)
+		glued_components[pos_to_coords(component.x, component.y)] = nil
+	end
+
+	function gravity_component(component)
+		if not component then return false end
+
+		local dest_y = max_y(component.x)
+		if dest_y > component.y then
+			remove_component(component)
+			glue_component(component.sprite, component.x, dest_y)
+			return true
+		end
+
+		return false
+	end
+
+	function collect_direction(current_comp, x, y, stack)
+		local next_comp = glued_components[pos_to_coords(current_comp.x + x, current_comp.y + y)]
+
+		if not next_comp or next_comp.sprite ~= current_comp.sprite then
+			if #stack >= 3 then
+				for _, component in pairs(stack) do component.marked = true end
+			end
+
+			return
+		end
+
+		add(stack, next_comp)
+		collect_direction(next_comp, x, y, stack)
+	end
+
 	return {
+		max_y=max_y,
+
 		turn_on=function(self)
 			active_triple = factory.produce(self)
 		end,
 
 		move_bounds=function(x, y)
 			return {
-				left=(contains(x - 8, y) or x - 8 < 2) and 0 or -8,
-				right=(contains(x + 8, y) or x + 8 > 42) and 0 or 8,
-				bottom=(contains(x, y + 8) or y + 8 > 98) and 0 or 8
+				left=(contains(x - 8, y) or x - 8 < ix) and 0 or -8,
+				right=(contains(x + 8, y) or x + 8 > fx) and 0 or 8,
+				bottom=(contains(x, y + 8) or y + 8 > fy) and 0 or 8
 			}
-		end,
-
-		max_y=function(x)
-			local y = 98
-			for _, component in pairs(glued_components) do
-				y = component.x == x and min(y, component.y - 8) or y
-			end
-			return y
 		end,
 
 		glue=function(self)
 			local pos = active_triple:pos()
-			for i=1, 3 do collect(i, pos.x, pos.y + (i-1) * 8) end
+			for i=1, 3 do glue_component(active_triple.component(i).s, pos.x, pos.y + (i-1) * 8) end
+
+			repeat
+				collect()
+			until (not gravity())
+
 			if not check_game_over() then
 				self:turn_on()
 			else
@@ -185,6 +255,7 @@ function new_board(factory)
 		end,
 
 		update=function()
+			animator:update()
 			try(active_triple, 'update')
 		end,
 
