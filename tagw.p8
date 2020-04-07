@@ -80,7 +80,7 @@ function delayed(animator, name, args)
 		name,
 		function() return time() - it < duration end,
 		(loops ~= 0) and function()
-			callback()
+			callback(loops - 1 > 0)
 			delayed(animator, name, merged(args, { loops=loops - 1 }))
 		end or callback
 	)
@@ -124,6 +124,7 @@ end
 -->8
 -- board and components
 function new_board(factory)
+	local new_b = {}
 	local active_triple
 	local animator = new_animator()
 	local glued_components = {}
@@ -140,6 +141,7 @@ function new_board(factory)
 	function glue_component(sprite, x, y)
 		glued_components[pos_to_coords(x, y)] = {
 			sprite=sprite,
+			visible=true,
 			x=x,
 			y=y
 		}
@@ -175,10 +177,48 @@ function new_board(factory)
 			collect_direction(component, 0,  8, { component })
 		end
 
-		for _, component in pairs(glued_components) do
-			if component.marked then remove_component(component) end
+		if remove_marked() then
+			delayed(animator, 'wait_gravity', { duration = 2.2, callback=function() gravity() end })
+		else
+			new_b:turn_on()
 		end
 	end
+
+	function remove_marked()
+		local collecting = false
+
+		for i, component in pairs(glued_components) do
+			if component.marked then
+				collecting = true
+				delayed(animator, 'coll'..i, {
+					duration=0.25,
+					callback=function(running_loop)
+						component.visible = not component.visible
+						if not running_loop then remove_component(component) end
+					end,
+					loops=8
+				})
+			end
+		end
+
+		return collecting
+	end
+
+	function collect_direction(current_comp, x, y, stack)
+		local next_comp = glued_components[pos_to_coords(current_comp.x + x, current_comp.y + y)]
+
+		if not next_comp or next_comp.sprite ~= current_comp.sprite then
+			if #stack >= 3 then
+				for _, component in pairs(stack) do component.marked = true end
+			end
+
+			return
+		end
+
+		add(stack, next_comp)
+		collect_direction(next_comp, x, y, stack)
+	end
+
 
 	function gravity()
 		local moved = false
@@ -189,7 +229,11 @@ function new_board(factory)
 			end
 		end
 
-		return moved
+		if moved then
+			collect()
+		else
+			new_b:turn_on()
+		end
 	end
 
 	function remove_component(component)
@@ -209,65 +253,47 @@ function new_board(factory)
 		return false
 	end
 
-	function collect_direction(current_comp, x, y, stack)
-		local next_comp = glued_components[pos_to_coords(current_comp.x + x, current_comp.y + y)]
+	new_b.max_y = max_y
 
-		if not next_comp or next_comp.sprite ~= current_comp.sprite then
-			if #stack >= 3 then
-				for _, component in pairs(stack) do component.marked = true end
-			end
-
-			return
+	new_b.turn_on = function(self)
+		if not check_game_over() then
+			active_triple = factory.produce(self)
+		else
+			printh('game over')
 		end
-
-		add(stack, next_comp)
-		collect_direction(next_comp, x, y, stack)
 	end
 
-	return {
-		max_y=max_y,
+	new_b.move_bounds = function(x, y)
+		return {
+			left=(contains(x - 8, y) or x - 8 < ix) and 0 or -8,
+			right=(contains(x + 8, y) or x + 8 > fx) and 0 or 8,
+			bottom=(contains(x, y + 8) or y + 8 > fy) and 0 or 8
+		}
+	end
 
-		turn_on=function(self)
-			active_triple = factory.produce(self)
-		end,
+	new_b.glue = function(self)
+		local pos = active_triple:pos()
+		for i=1, 3 do glue_component(active_triple.component(i).s, pos.x, pos.y + (i-1) * 8) end
 
-		move_bounds=function(x, y)
-			return {
-				left=(contains(x - 8, y) or x - 8 < ix) and 0 or -8,
-				right=(contains(x + 8, y) or x + 8 > fx) and 0 or 8,
-				bottom=(contains(x, y + 8) or y + 8 > fy) and 0 or 8
-			}
-		end,
+		active_triple = nil
+		collect()
+	end
 
-		glue=function(self)
-			local pos = active_triple:pos()
-			for i=1, 3 do glue_component(active_triple.component(i).s, pos.x, pos.y + (i-1) * 8) end
+	new_b.update = function()
+		animator:update()
+		try(active_triple, 'update')
+	end
 
-			repeat
-				collect()
-			until (not gravity())
-
-			if not check_game_over() then
-				self:turn_on()
-			else
-				printh('game over')
-			end
-		end,
-
-		update=function()
-			animator:update()
-			try(active_triple, 'update')
-		end,
-
-		draw=function()
-			for _, component in pairs(glued_components) do
-				spr(component.sprite, component.x, component.y)
-			end
-			try(active_triple, 'draw')
-			rect(0, 0, 50, 108, 13)
-			rect(1, 1, 49, 107, 6)
+	new_b.draw = function()
+		for _, component in pairs(glued_components) do
+			if component.visible then spr(component.sprite, component.x, component.y) end
 		end
-	}
+		try(active_triple, 'draw')
+		rect(0, 0, 50, 108, 13)
+		rect(1, 1, 49, 107, 6)
+	end
+
+	return new_b
 end
 
 local comp_screw, comp_gear, comp_wire = {s=1, c=6}, {s=2, c=9}, {s=3, c=14}
