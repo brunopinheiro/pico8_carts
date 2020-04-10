@@ -6,8 +6,15 @@ __lua__
 
 -- game loop
 printh('::::: new :::::')
-local board, factory
+local board, factory, warehouse
+local comp_screw, comp_gear, comp_wire = {s=1, c=6}, {s=2, c=9}, {s=3, c=14}
+
 function _init()
+	warehouse = new_warehouse({
+		comp_screw,
+		comp_gear,
+		comp_wire
+	})
 	board = new_board(new_factory())
 	board:turn_on()
 end
@@ -19,6 +26,7 @@ end
 function _draw()
 	cls()
 	board:draw()
+	warehouse:draw()
 end
 
 --core
@@ -296,7 +304,6 @@ function new_board(factory)
 	return new_b
 end
 
-local comp_screw, comp_gear, comp_wire = {s=1, c=6}, {s=2, c=9}, {s=3, c=14}
 
 function new_factory()
 	return {
@@ -397,6 +404,24 @@ function new_triple(board, components)
 				spr(comp.s, x, y + (i - 1) * 8)
 				local comp_preview_y = max_y_preview - (3 - i) * 8
 				rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
+			end
+		end
+	}
+end
+
+function new_warehouse(components)
+	local counter = {}
+	for component in all(components) do
+		counter[component.s] = 0
+	end
+
+	return {
+		draw=function()
+			rect(52, 0, 76, 108, 5)
+			for i, component in pairs(components) do
+				local y = 2 * i + 8 * (i -1)
+				spr(component.s, 54, y)
+				print('x'..tostr(counter[component.s]), 64, y + 2, 7)
 			end
 		end
 	}
