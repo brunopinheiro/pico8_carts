@@ -6,7 +6,7 @@ __lua__
 
 -- game loop
 printh('::::: new :::::')
-local board, factory, warehouse
+local board, factory, warehouse, director
 local comp_screw, comp_gear, comp_wire = {s=1, c=6}, {s=2, c=9}, {s=3, c=14}
 
 function _init()
@@ -17,6 +17,9 @@ function _init()
 	})
 	board = new_board(new_factory())
 	board:turn_on()
+
+	director = new_director(board, warehouse)
+	director.init()
 end
 
 function _update60()
@@ -202,7 +205,10 @@ function new_board(factory)
 					duration=0.25,
 					callback=function(running_loop)
 						component.visible = not component.visible
-						if not running_loop then remove_component(component) end
+						if not running_loop then
+							remove_component(component)
+							if new_b.on_collect then new_b.on_collect(component.sprite) end
+						end
 					end,
 					loops=8
 				})
@@ -416,6 +422,10 @@ function new_warehouse(components)
 	end
 
 	return {
+		stock=function(component)
+			counter[component] = counter[component] + 1
+		end,
+
 		draw=function()
 			rect(52, 0, 76, 108, 5)
 			for i, component in pairs(components) do
@@ -423,6 +433,20 @@ function new_warehouse(components)
 				spr(component.s, 54, y)
 				print('x'..tostr(counter[component.s]), 64, y + 2, 7)
 			end
+		end
+	}
+end
+
+-->8
+-- director
+function new_director(board, warehouse)
+	function board_collect_handler(component)
+		warehouse.stock(component)
+	end
+
+	return {
+		init=function()
+			board.on_collect = board_collect_handler
 		end
 	}
 end
