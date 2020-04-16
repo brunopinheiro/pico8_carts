@@ -7,15 +7,21 @@ __lua__
 -- game loop
 printh('::::: new :::::')
 local board, factory, warehouse, director
-local comp_screw, comp_gear, comp_wire = {s=1, c=6}, {s=2, c=9}, {s=3, c=14}
+local available_components = {
+	{s=1,  c=6}, -- screw
+	{s=2,  c=9}, -- gear
+	{s=3, c=14}, -- wire
+	{s=4, c=13}, -- iron
+	{s=5, c=12}, -- lamp
+	{s=6, c=11}, -- energy
+	{s=7,  c=5}, -- oil
+	{s=8, c=8}  -- fire
+}
 
 function _init()
-	warehouse = new_warehouse({
-		comp_screw,
-		comp_gear,
-		comp_wire
-	})
-	board = new_board(new_factory())
+	warehouse = new_warehouse(available_components)
+	factory = new_factory()
+	board = new_board(factory)
 	board:turn_on()
 
 	director = new_director(board, warehouse)
@@ -30,6 +36,7 @@ function _draw()
 	cls()
 	board:draw()
 	warehouse:draw()
+	factory:draw()
 end
 
 --core
@@ -314,7 +321,28 @@ end
 function new_factory()
 	return {
 		produce=function(board)
-			return new_triple(board, { comp_screw, comp_gear, comp_wire })
+			next_triple = new_triple(board, {
+				available_components[1],
+				available_components[2],
+				available_components[3]
+			})
+
+			next_triple.set_pos(66, 1)
+
+			return new_triple(board, {
+				available_components[1],
+				available_components[2],
+				available_components[3]
+			})
+		end,
+
+		draw=function()
+			print('n', 56, 1)
+			print('e', 56, 7)
+			print('x', 56, 13)
+			print('t', 56, 19)
+			rect(52, 0, 76, 25, 5)
+			next_triple.draw(false)
 		end
 	}
 end
@@ -391,6 +419,11 @@ function new_triple(board, components)
 	return {
 		pos=function() return {x=x, y=y} end,
 
+		set_pos=function(new_x, new_y)
+			x=new_x
+			y=new_y
+		end,
+
 		component=function(index)
 			return components[index]
 		end,
@@ -403,13 +436,16 @@ function new_triple(board, components)
 			move()
 		end,
 
-		draw=function()
+		draw=function(preview)
 			local max_y_preview = board.max_y(x)
 
 			for i, comp in pairs(components) do
 				spr(comp.s, x, y + (i - 1) * 8)
-				local comp_preview_y = max_y_preview - (3 - i) * 8
-				rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
+
+				if preview then
+					local comp_preview_y = max_y_preview - (3 - i) * 8
+					rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
+				end
 			end
 		end
 	}
@@ -427,11 +463,12 @@ function new_warehouse(components)
 		end,
 
 		draw=function()
-			rect(52, 0, 76, 108, 5)
+			rect(52, 27, 76, 108, 5)
 			for i, component in pairs(components) do
-				local y = 2 * i + 8 * (i -1)
+				local amount = counter[component.s]
+				local y = 2 * i + 8 * (i -1) + 27
 				spr(component.s, 54, y)
-				print('x'..tostr(counter[component.s]), 64, y + 2, 7)
+				print('x'..(amount > 9 and '' or '0')..tostr(amount), 64, y + 2, 7)
 			end
 		end
 	}
@@ -452,11 +489,11 @@ function new_director(board, warehouse)
 end
 
 __gfx__
-00000000056666500004400004222140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000567777650049940002efee20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0070070067775776049aa94002e8ee20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000770006777557649affa9402e88e20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000770006775777649affa9402ee8e20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0070070067577776049aa94002e88e20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000567777650049940002e8ee20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000056666500004400004122240000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000056666500004400004222140000ddd5000cccc000b300b30000550000009800000000000000000000000000000000000000000000000000000000000
+00000000567777650049940002efee2000dd6dd500cccc00bbbbbbbb005dd5000089880000000000000000000000000000000000000000000000000000000000
+0070070067775776049aa94002e8ee200dd776d50ccaacc03bbba9b3055dd5500899988000000000000000000000000000000000000000000000000000000000
+000770006777557649affa9402e88e20dd7776d50ca9aac00bbaa9b0555d1d550899998800000000000000000000000000000000000000000000000000000000
+000770006775777649affa9402ee8e20d7776dd00caa9ac00baa9bb055d161d5889aa98800000000000000000000000000000000000000000000000000000000
+0070070067577776049aa94002e88e20dd76dd50cca9aaccbba9bbbb55dd11d5889aa98000000000000000000000000000000000000000000000000000000000
+00000000567777650049940002e8ee200dddd500cccaaccc3bbbbbb3055ddd55089aaa9000000000000000000000000000000000000000000000000000000000
+0000000005666650000440000412224000dd5000ccc66ccc0b300b3000555550009aa90000000000000000000000000000000000000000000000000000000000
