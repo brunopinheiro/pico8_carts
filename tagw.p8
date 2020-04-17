@@ -55,10 +55,6 @@ function swap(t, k1, k2)
 	t[k2] = backup
 end
 
-function try(t, method)
-	if t then t[method](t) end
-end
-
 function new_animator()
 	return {
 		animations={},
@@ -78,7 +74,7 @@ function new_animator()
 			end
 			for k, anim in pairs(completed) do
 				self:stop(k)
-				try(anim, 'callback')
+				if anim.callback then anim.callback(anim) end
 			end
 		end
 	}
@@ -154,6 +150,14 @@ function new_board(factory)
 
 	function contains(x, y)
 		return glued_components[pos_to_coords(x, y)]
+	end
+
+	function glue()
+		local pos = active_triple:pos()
+		for i=1, 3 do glue_component(active_triple.component(i).s, pos.x, pos.y + (i-1) * 8) end
+
+		active_triple = nil
+		collect()
 	end
 
 	function glue_component(sprite, x, y)
@@ -278,7 +282,7 @@ function new_board(factory)
 
 	new_b.turn_on = function(self)
 		if not check_game_over() then
-			active_triple = factory.produce(self)
+			active_triple = factory.produce()
 		else
 			printh('game over')
 		end
@@ -292,27 +296,26 @@ function new_board(factory)
 		}
 	end
 
-	new_b.glue = function(self)
-		local pos = active_triple:pos()
-		for i=1, 3 do glue_component(active_triple.component(i).s, pos.x, pos.y + (i-1) * 8) end
-
-		active_triple = nil
-		collect()
-	end
-
-	new_b.update = function()
+	new_b.update = function(self)
 		animator:update()
-		try(active_triple, 'update')
+		if active_triple then active_triple.update(self) end
 	end
 
-	new_b.draw = function()
+	new_b.draw = function(self)
 		for _, component in pairs(glued_components) do
 			if component.visible then spr(component.sprite, component.x, component.y) end
 		end
-		try(active_triple, 'draw')
+
+		if active_triple then
+			active_triple.draw()
+			active_triple.preview(self)
+		end
+
 		rect(0, 0, 50, 108, 13)
 		rect(1, 1, 49, 107, 6)
 	end
+
+	notification_center:listen('triple_glued', glue)
 
 	return new_b
 end
@@ -320,8 +323,8 @@ end
 
 function new_factory()
 	return {
-		produce=function(board)
-			next_triple = new_triple(board, {
+		produce=function()
+			next_triple = new_triple({
 				g_components[1],
 				g_components[2],
 				g_components[3]
@@ -329,7 +332,7 @@ function new_factory()
 
 			next_triple.set_pos(66, 1)
 
-			return new_triple(board, {
+			return new_triple({
 				g_components[1],
 				g_components[2],
 				g_components[3]
@@ -342,17 +345,21 @@ function new_factory()
 			print('x', 56, 13)
 			print('t', 56, 19)
 			rect(52, 0, 76, 25, 5)
-			next_triple.draw(false)
+			next_triple.draw()
 		end
 	}
 end
 
-function new_triple(board, components)
+function new_triple(components)
 	local animator = new_animator()
 	local x, y  = 2, -30
 	local fall_locked, fall_speedup = false, 0
 	local hor_locked = false
 	local glue_attempts = 0
+
+	function glue_itself()
+		notification_center:notify('triple_glued')
+	end
 
 	function try_swap()
 		if btnp(g_buttons.x) then
@@ -372,22 +379,22 @@ function new_triple(board, components)
 		end
 	end
 
-	function try_instant_glue()
+	function try_instant_glue(max_y)
 		if btnp(g_buttons.o) then
-			y = board.max_y(x) - 16
+			y = max_y - 16
 			fall_locked = true
 			hor_locked = true
 			animator:stop('fall')
-			delayed(animator, 'instant_glue', { duration=0.5, callback=function() board:glue() end })
+			delayed(animator, 'instant_glue', { duration=0.5, callback=glue_itself })
 		end
 	end
 
-	function try_glue(bounds)
-		if bounds.bottom == 0 then
+	function try_glue(bounds_bottom)
+		if bounds_bottom == 0 then
 			if glue_attempts < 2 then
 				glue_attempts = glue_attempts + 1
 			else
-				board:glue()
+				glue_itself()
 			end
 		else
 			glue_attempts = 0
@@ -398,9 +405,7 @@ function new_triple(board, components)
 		return glue_attempts > 0 and 0.8 or 1 - fall_speedup
 	end
 
-	function move()
-		local bounds = board.move_bounds(x, y + 16)
-
+	function move(bounds)
 		-- horizontal
 		if not hor_locked then
 			local hor = btnp(g_buttons.l) and bounds.left or (btnp(g_buttons.r) and bounds.right or 0)
@@ -411,7 +416,7 @@ function new_triple(board, components)
 		if not fall_locked then
 			fall_locked = true
 			y = y + bounds.bottom
-			try_glue(bounds)
+			try_glue(bounds.bottom)
 			delayed(animator, 'fall', { duration=fall_delay(), callback=function() fall_locked = false end })
 		end
 	end
@@ -428,24 +433,24 @@ function new_triple(board, components)
 			return components[index]
 		end,
 
-		update=function()
+		update=function(board)
 			animator:update()
 			try_swap()
 			try_speedup()
-			try_instant_glue()
-			move()
+			try_instant_glue(board.max_y(x))
+			move(board.move_bounds(x, y))
 		end,
 
-		draw=function(preview)
-			local max_y_preview = board.max_y(x)
-
+		draw=function()
 			for i, comp in pairs(components) do
 				spr(comp.s, x, y + (i - 1) * 8)
+			end
+		end,
 
-				if preview then
-					local comp_preview_y = max_y_preview - (3 - i) * 8
-					rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
-				end
+		preview=function(board)
+			for i, comp in pairs(components) do
+				local comp_preview_y = board.max_y(x) - (3 - i) * 8
+				rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
 			end
 		end
 	}
