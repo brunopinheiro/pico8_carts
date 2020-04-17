@@ -4,12 +4,19 @@ __lua__
 -- the amazing goblin's workshop
 --   by brunopinheiro
 
+-- "dictionary"
+--	act: active
+--	comp: component
+-- 	comps: components
+--	wc: wrapped component
+-- 	wcs: wrapped components
+
 -- core
 printh('::::: new :::::')
 
-local board, factory, warehouse, director
+local machine, factory, warehouse, director
 
-local g_components={
+local g_comps={
 	{s=1,  c=6}, -- screw
 	{s=2,  c=9}, -- gear
 	{s=3, c=14}, -- wire
@@ -137,52 +144,38 @@ end
 
 -->8
 -- gameplay
-function new_board()
-	local active_triple
-	local animator = new_animator()
-	local glued_components = {}
+function new_machine()
+	local act_triple, animator, wcs = nil, new_animator(), {}
 	local ix, iy, fx, fy = 2, 2, 42, 98
 
 	function run(self)
-		if not check_game_over() then
-			notification_center:notify('request_triple')
-		else
-			printh('game over')
+		notification_center:notify(check_game_over() and 'machine_jammed' or 'request_triple')
+	end
+
+	function glue()
+		glue_comps(act_triple.wcs())
+		act_triple = nil
+		collect()
+	end
+
+	function glue_comps(target_wcs)
+		for wc in all(target_wcs) do
+			wcs[pos_to_coords(wc.x, wc.y)] = wc
 		end
 	end
 
-	function set_active_triple(triple)
-		active_triple = triple
+	function set_act_triple(triple)
+		act_triple = triple
 	end
 
 	function pos_to_coords(x, y)
 		return 'c'..x..'r'..y
 	end
 
-	function contains(x, y)
-		return glued_components[pos_to_coords(x, y)]
-	end
-
-	function glue()
-		local pos = active_triple:pos()
-		for i=1, 3 do glue_component(active_triple.component(i).s, pos.x, pos.y + (i-1) * 8) end
-
-		active_triple = nil
-		collect()
-	end
-
-	function glue_component(sprite, x, y)
-		glued_components[pos_to_coords(x, y)] = {
-			sprite=sprite,
-			visible=true,
-			x=x,
-			y=y
-		}
-	end
-
+	-- have a state for highest y (maybe by x)
 	function check_game_over()
-		for _, component in pairs(glued_components) do
-			if component.y < -8 then
+		for _, wc in pairs(wcs) do
+			if wc.y < -8 then
 				return true
 			end
 		end
@@ -190,24 +183,24 @@ function new_board()
 		return false
 	end
 
-	function component_at(x, y)
-		return glued_components[pos_to_coords(x, y)]
+	function wc_at(x, y)
+		return wcs[pos_to_coords(x, y)]
 	end
 
 	function max_y(x)
 		for y=fy, iy, -8 do
-			if not component_at(x, y) then return y end
+			if not wc_at(x, y) then return y end
 		end
 
 		return iy
 	end
 
 	function collect()
-		for i, component in pairs(glued_components) do
-			collect_direction(component, 8, -8, { component })
-			collect_direction(component, 8,  0, { component })
-			collect_direction(component, 8,  8, { component })
-			collect_direction(component, 0,  8, { component })
+		for _, wc in pairs(wcs) do
+			collect_direction(wc, 8, -8, { wc })
+			collect_direction(wc, 8,  0, { wc })
+			collect_direction(wc, 8,  8, { wc })
+			collect_direction(wc, 0,  8, { wc })
 		end
 
 		if remove_marked() then
@@ -217,51 +210,42 @@ function new_board()
 		end
 	end
 
-	function remove_marked()
-		local collecting = false
+	function collect_direction(current_wc, x, y, stack)
+		local next_wc = wc_at(current_wc.x + x, current_wc.y + y)
 
-		for i, component in pairs(glued_components) do
-			if component.marked then
-				collecting = true
-				delayed(animator, 'coll'..i, {
-					duration=0.25,
-					callback=function(running_loop)
-						component.visible = not component.visible
-						if not running_loop then
-							remove_component(component)
-							notification_center:notify('component_collected', component.sprite)
-						end
-					end,
-					loops=8
-				})
-			end
-		end
-
-		return collecting
-	end
-
-	function collect_direction(current_comp, x, y, stack)
-		local next_comp = glued_components[pos_to_coords(current_comp.x + x, current_comp.y + y)]
-
-		if not next_comp or next_comp.sprite ~= current_comp.sprite then
+		if not next_wc or next_wc.sprite ~= current_wc.sprite then
 			if #stack >= 3 then
-				for _, component in pairs(stack) do component.marked = true end
+				for wc in all(stack) do
+					wc.marked = true
+				end
 			end
 
 			return
 		end
 
-		add(stack, next_comp)
-		collect_direction(next_comp, x, y, stack)
+		add(stack, next_wc)
+		collect_direction(next_wc, x, y, stack)
 	end
 
+	function remove_marked()
+		local unwrapped = false
+
+		for _, wc in pairs(wcs) do
+			if wc.marked then
+				unwrapped = true
+				wc:unwrap(remove_wc)
+			end
+		end
+
+		return unwrapped
+	end
 
 	function gravity()
 		local moved = false
 
 		for y=fy, iy, -8 do
 			for x=ix, fx, 8 do
-				moved = gravity_component(component_at(x, y)) or moved
+				moved = gravity_wc(wc_at(x, y)) or moved
 			end
 		end
 
@@ -272,17 +256,18 @@ function new_board()
 		end
 	end
 
-	function remove_component(component)
-		glued_components[pos_to_coords(component.x, component.y)] = nil
+	function remove_wc(wc)
+		wcs[pos_to_coords(wc.x, wc.y)] = nil
 	end
 
-	function gravity_component(component)
-		if not component then return false end
+	function gravity_wc(wc)
+		if not wc then return false end
 
-		local dest_y = max_y(component.x)
-		if dest_y > component.y then
-			remove_component(component)
-			glue_component(component.sprite, component.x, dest_y)
+		local dest_y = max_y(wc.x)
+		if dest_y > wc.y then
+			remove_wc(wc)
+			wc.y = dest_y
+			glue_comps({ wc })
 			return true
 		end
 
@@ -290,7 +275,7 @@ function new_board()
 	end
 
 	notification_center:listen('triple_glued', glue)
-	notification_center:listen('triple_produced', set_active_triple)
+	notification_center:listen('triple_produced', set_act_triple)
 
 	return {
 		max_y=max_y,
@@ -298,25 +283,32 @@ function new_board()
 
 		move_bounds=function(x, y)
 			return {
-				left=(contains(x - 8, y) or x - 8 < ix) and 0 or -8,
-				right=(contains(x + 8, y) or x + 8 > fx) and 0 or 8,
-				bottom=(contains(x, y + 8) or y + 8 > fy) and 0 or 8
+				left=(wc_at(x - 8, y) or x - 8 < ix) and 0 or -8,
+				right=(wc_at(x + 8, y) or x + 8 > fx) and 0 or 8,
+				bottom=(wc_at(x, y + 8) or y + 8 > fy) and 0 or 8
 			}
 		end,
 
 		update=function(self)
 			animator:update()
-			if active_triple then active_triple.update(self) end
+
+			for _, wc in pairs(wcs) do
+				wc:update()
+			end
+
+			if act_triple then
+				act_triple.update(self)
+			end
 		end,
 
 		draw=function(self)
-			for _, component in pairs(glued_components) do
-				if component.visible then spr(component.sprite, component.x, component.y) end
+			for _, wc in pairs(wcs) do
+				wc:draw()
 			end
 
-			if active_triple then
-				active_triple.draw()
-				active_triple.preview(self)
+			if act_triple then
+				act_triple.draw()
+				act_triple.preview(self)
 			end
 
 			rect(0, 0, 50, 108, 13)
@@ -325,39 +317,7 @@ function new_board()
 	}
 end
 
-
-function new_factory()
-	function produce()
-		next_triple = new_triple({
-			g_components[1],
-			g_components[2],
-			g_components[3]
-		})
-
-		next_triple.set_pos(66, 1)
-
-		notification_center:notify('triple_produced', new_triple({
-			g_components[1],
-			g_components[2],
-			g_components[3]
-		}))
-	end
-
-	notification_center:listen('request_triple', produce)
-
-	return {
-		draw=function()
-			print('n', 56, 1)
-			print('e', 56, 7)
-			print('x', 56, 13)
-			print('t', 56, 19)
-			rect(52, 0, 76, 25, 5)
-			next_triple.draw()
-		end
-	}
-end
-
-function new_triple(components)
+function new_triple(comps)
 	local animator = new_animator()
 	local x, y  = 2, -30
 	local fall_locked, fall_speedup = false, 0
@@ -370,8 +330,8 @@ function new_triple(components)
 
 	function try_swap()
 		if btnp(g_buttons.x) then
-			swap(components, 1, 2)
-			swap(components, 1, 3)
+			swap(comps, 1, 2)
+			swap(comps, 1, 3)
 		end
 	end
 
@@ -431,34 +391,107 @@ function new_triple(components)
 	return {
 		pos=function() return {x=x, y=y} end,
 
+		wcs=function()
+			local wcs = {}
+			for i=1, 3 do
+				add(wcs, new_wc(comps[i].s, x, y + (i - 1) * 8))
+			end
+			return wcs
+		end,
+
 		set_pos=function(new_x, new_y)
 			x=new_x
 			y=new_y
 		end,
 
 		component=function(index)
-			return components[index]
+			return comps[index]
 		end,
 
-		update=function(board)
+		update=function(machine)
 			animator:update()
 			try_swap()
 			try_speedup()
-			try_instant_glue(board.max_y(x))
-			move(board.move_bounds(x, y))
+			try_instant_glue(machine.max_y(x))
+			move(machine.move_bounds(x, y + 16))
 		end,
 
 		draw=function()
-			for i, comp in pairs(components) do
+			for i, comp in pairs(comps) do
 				spr(comp.s, x, y + (i - 1) * 8)
 			end
 		end,
 
-		preview=function(board)
-			for i, comp in pairs(components) do
-				local comp_preview_y = board.max_y(x) - (3 - i) * 8
+		preview=function(machine)
+			for i, comp in pairs(comps) do
+				local comp_preview_y = machine.max_y(x) - (3 - i) * 8
 				rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
 			end
+		end
+	}
+end
+
+function new_wc(sprite, x, y)
+	local animator = new_animator()
+
+	return {
+		x=x, y=y,
+		sprite=sprite,
+		visible=true,
+
+		unwrap=function(self, callback)
+			delayed(animator, 'unwrapping', {
+				duration=0.25,
+				callback=function(running_loop)
+					self.visible = not self.visible
+					if not running_loop then
+						callback(self)
+						notification_center:notify('component_unwrapped', self.sprite)
+					end
+				end,
+				loops=8
+			})
+		end,
+
+		update=function()
+			animator:update()
+		end,
+
+		draw=function(self)
+			if self.visible then
+				spr(self.sprite, self.x, self.y)
+			end
+		end
+	}
+end
+
+function new_factory()
+	function produce()
+		next_triple = new_triple({
+			g_comps[1],
+			g_comps[2],
+			g_comps[3]
+		})
+
+		next_triple.set_pos(66, 1)
+
+		notification_center:notify('triple_produced', new_triple({
+			g_comps[1],
+			g_comps[2],
+			g_comps[3]
+		}))
+	end
+
+	notification_center:listen('request_triple', produce)
+
+	return {
+		draw=function()
+			print('n', 56, 1)
+			print('e', 56, 7)
+			print('x', 56, 13)
+			print('t', 56, 19)
+			rect(52, 0, 76, 25, 5)
+			next_triple.draw()
 		end
 	}
 end
@@ -474,7 +507,7 @@ function new_warehouse(components)
 		counter[component] = counter[component] + 1
 	end
 
-	notification_center:listen('component_collected', stock)
+	notification_center:listen('component_unwrapped', stock)
 
 	return {
 		draw=function()
@@ -492,19 +525,19 @@ end
 -->8
 -- game loop
 function _init()
-	warehouse = new_warehouse(g_components)
+	warehouse = new_warehouse(g_comps)
 	factory = new_factory()
-	board = new_board()
-	board:turn_on()
+	machine = new_machine()
+	machine:turn_on()
 end
 
 function _update60()
-	board:update()
+	machine:update()
 end
 
 function _draw()
 	cls()
-	board:draw()
+	machine:draw()
 	warehouse:draw()
 	factory:draw()
 end
