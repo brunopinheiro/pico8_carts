@@ -4,10 +4,12 @@ __lua__
 -- the amazing goblin's workshop
 --   by brunopinheiro
 
--- game loop
+-- core
 printh('::::: new :::::')
+
 local board, factory, warehouse, director
-local available_components = {
+
+local g_components={
 	{s=1,  c=6}, -- screw
 	{s=2,  c=9}, -- gear
 	{s=3, c=14}, -- wire
@@ -15,32 +17,30 @@ local available_components = {
 	{s=5, c=12}, -- lamp
 	{s=6, c=11}, -- energy
 	{s=7,  c=5}, -- oil
-	{s=8, c=8}  -- fire
+	{s=8,  c=8}  -- fire
 }
 
-function _init()
-	warehouse = new_warehouse(available_components)
-	factory = new_factory()
-	board = new_board(factory)
-	board:turn_on()
+local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
 
-	director = new_director(board, warehouse)
-	director.init()
-end
+notification_center = {
+	events={},
 
-function _update60()
-	board:update()
-end
+	notify=function(self, event, params)
+		local event_listeners = self.events[event] or {}
+		for _, listener in pairs(event_listeners) do listener(params) end
+	end,
 
-function _draw()
-	cls()
-	board:draw()
-	warehouse:draw()
-	factory:draw()
-end
+	listen=function(self, event, handler)
+		self.events[event] = self.events[event] or {}
+		add(self.events[event], handler)
+	end,
 
---core
-local btn_left, btn_right, btn_up, btn_down, btn_o, btn_x = 0, 1, 2, 3, 4, 5
+	stop=function(self, event, handler)
+		if self.events[event] then
+			remove(self.events[event], handler)
+		end
+	end
+}
 
 function merged(t1, t2)
 	local new = {}
@@ -140,7 +140,7 @@ function animate(animator, name, args)
 end
 
 -->8
--- board and components
+-- gameplay
 function new_board(factory)
 	local new_b = {}
 	local active_triple
@@ -214,7 +214,7 @@ function new_board(factory)
 						component.visible = not component.visible
 						if not running_loop then
 							remove_component(component)
-							if new_b.on_collect then new_b.on_collect(component.sprite) end
+							notification_center:notify('component_collected', component.sprite)
 						end
 					end,
 					loops=8
@@ -322,17 +322,17 @@ function new_factory()
 	return {
 		produce=function(board)
 			next_triple = new_triple(board, {
-				available_components[1],
-				available_components[2],
-				available_components[3]
+				g_components[1],
+				g_components[2],
+				g_components[3]
 			})
 
 			next_triple.set_pos(66, 1)
 
 			return new_triple(board, {
-				available_components[1],
-				available_components[2],
-				available_components[3]
+				g_components[1],
+				g_components[2],
+				g_components[3]
 			})
 		end,
 
@@ -355,14 +355,14 @@ function new_triple(board, components)
 	local glue_attempts = 0
 
 	function try_swap()
-		if btnp(btn_x) then
+		if btnp(g_buttons.x) then
 			swap(components, 1, 2)
 			swap(components, 1, 3)
 		end
 	end
 
 	function try_speedup()
-		if btn(btn_down) then
+		if btn(g_buttons.d) then
 			if fall_locked and fall_speedup == 0 then
 				fall_locked = false
 			end
@@ -373,7 +373,7 @@ function new_triple(board, components)
 	end
 
 	function try_instant_glue()
-		if btnp(btn_o) then
+		if btnp(g_buttons.o) then
 			y = board.max_y(x) - 16
 			fall_locked = true
 			hor_locked = true
@@ -403,7 +403,7 @@ function new_triple(board, components)
 
 		-- horizontal
 		if not hor_locked then
-			local hor = btnp(btn_left) and bounds.left or (btnp(btn_right) and bounds.right or 0)
+			local hor = btnp(g_buttons.l) and bounds.left or (btnp(g_buttons.r) and bounds.right or 0)
 			x = x + hor
 		end
 
@@ -457,11 +457,13 @@ function new_warehouse(components)
 		counter[component.s] = 0
 	end
 
-	return {
-		stock=function(component)
-			counter[component] = counter[component] + 1
-		end,
+	function stock(component)
+		counter[component] = counter[component] + 1
+	end
 
+	notification_center:listen('component_collected', stock)
+
+	return {
 		draw=function()
 			rect(52, 27, 76, 108, 5)
 			for i, component in pairs(components) do
@@ -475,17 +477,23 @@ function new_warehouse(components)
 end
 
 -->8
--- director
-function new_director(board, warehouse)
-	function board_collect_handler(component)
-		warehouse.stock(component)
-	end
+-- game loop
+function _init()
+	warehouse = new_warehouse(g_components)
+	factory = new_factory()
+	board = new_board(factory)
+	board:turn_on()
+end
 
-	return {
-		init=function()
-			board.on_collect = board_collect_handler
-		end
-	}
+function _update60()
+	board:update()
+end
+
+function _draw()
+	cls()
+	board:draw()
+	warehouse:draw()
+	factory:draw()
 end
 
 __gfx__
