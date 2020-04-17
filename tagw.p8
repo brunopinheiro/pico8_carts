@@ -137,12 +137,23 @@ end
 
 -->8
 -- gameplay
-function new_board(factory)
-	local new_b = {}
+function new_board()
 	local active_triple
 	local animator = new_animator()
 	local glued_components = {}
 	local ix, iy, fx, fy = 2, 2, 42, 98
+
+	function run(self)
+		if not check_game_over() then
+			notification_center:notify('request_triple')
+		else
+			printh('game over')
+		end
+	end
+
+	function set_active_triple(triple)
+		active_triple = triple
+	end
 
 	function pos_to_coords(x, y)
 		return 'c'..x..'r'..y
@@ -202,7 +213,7 @@ function new_board(factory)
 		if remove_marked() then
 			delayed(animator, 'wait_gravity', { duration = 2.2, callback=function() gravity() end })
 		else
-			new_b:turn_on()
+			run()
 		end
 	end
 
@@ -257,7 +268,7 @@ function new_board(factory)
 		if moved then
 			collect()
 		else
-			new_b:turn_on()
+			run()
 		end
 	end
 
@@ -278,67 +289,63 @@ function new_board(factory)
 		return false
 	end
 
-	new_b.max_y = max_y
-
-	new_b.turn_on = function(self)
-		if not check_game_over() then
-			active_triple = factory.produce()
-		else
-			printh('game over')
-		end
-	end
-
-	new_b.move_bounds = function(x, y)
-		return {
-			left=(contains(x - 8, y) or x - 8 < ix) and 0 or -8,
-			right=(contains(x + 8, y) or x + 8 > fx) and 0 or 8,
-			bottom=(contains(x, y + 8) or y + 8 > fy) and 0 or 8
-		}
-	end
-
-	new_b.update = function(self)
-		animator:update()
-		if active_triple then active_triple.update(self) end
-	end
-
-	new_b.draw = function(self)
-		for _, component in pairs(glued_components) do
-			if component.visible then spr(component.sprite, component.x, component.y) end
-		end
-
-		if active_triple then
-			active_triple.draw()
-			active_triple.preview(self)
-		end
-
-		rect(0, 0, 50, 108, 13)
-		rect(1, 1, 49, 107, 6)
-	end
-
 	notification_center:listen('triple_glued', glue)
+	notification_center:listen('triple_produced', set_active_triple)
 
-	return new_b
+	return {
+		max_y=max_y,
+		turn_on=run,
+
+		move_bounds=function(x, y)
+			return {
+				left=(contains(x - 8, y) or x - 8 < ix) and 0 or -8,
+				right=(contains(x + 8, y) or x + 8 > fx) and 0 or 8,
+				bottom=(contains(x, y + 8) or y + 8 > fy) and 0 or 8
+			}
+		end,
+
+		update=function(self)
+			animator:update()
+			if active_triple then active_triple.update(self) end
+		end,
+
+		draw=function(self)
+			for _, component in pairs(glued_components) do
+				if component.visible then spr(component.sprite, component.x, component.y) end
+			end
+
+			if active_triple then
+				active_triple.draw()
+				active_triple.preview(self)
+			end
+
+			rect(0, 0, 50, 108, 13)
+			rect(1, 1, 49, 107, 6)
+		end
+	}
 end
 
 
 function new_factory()
+	function produce()
+		next_triple = new_triple({
+			g_components[1],
+			g_components[2],
+			g_components[3]
+		})
+
+		next_triple.set_pos(66, 1)
+
+		notification_center:notify('triple_produced', new_triple({
+			g_components[1],
+			g_components[2],
+			g_components[3]
+		}))
+	end
+
+	notification_center:listen('request_triple', produce)
+
 	return {
-		produce=function()
-			next_triple = new_triple({
-				g_components[1],
-				g_components[2],
-				g_components[3]
-			})
-
-			next_triple.set_pos(66, 1)
-
-			return new_triple({
-				g_components[1],
-				g_components[2],
-				g_components[3]
-			})
-		end,
-
 		draw=function()
 			print('n', 56, 1)
 			print('e', 56, 7)
@@ -458,6 +465,7 @@ end
 
 function new_warehouse(components)
 	local counter = {}
+
 	for component in all(components) do
 		counter[component.s] = 0
 	end
@@ -486,7 +494,7 @@ end
 function _init()
 	warehouse = new_warehouse(g_components)
 	factory = new_factory()
-	board = new_board(factory)
+	board = new_board()
 	board:turn_on()
 end
 
