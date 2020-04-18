@@ -5,17 +5,15 @@ __lua__
 --   by brunopinheiro
 
 -- "glossary"
---		act: active
---		comp: component
+--			act: active
+--			comp: component
 -- 		comps: components
---		nc: notification center
---		wc: wrapped component
+--			nc: notification center
+--			wc: wrapped component
 -- 		wcs: wrapped components
 
 -- core
 printh('::::: new :::::')
-
-local machine, factory, warehouse, director
 
 local g_comps={
 	{s=1,  c=6}, -- screw
@@ -26,6 +24,21 @@ local g_comps={
 	{s=6, c=11}, -- energy
 	{s=7,  c=5}, -- oil
 	{s=8,  c=8}  -- fire
+}
+
+function needed_comps(comp_pairs)
+	local needs = {}
+	for comp_pair in all(comp_pairs) do
+		needs[comp_pair[1]] = comp_pair[2]
+	end
+	return needs
+end
+
+local g_items_spec={
+	{
+		ss={16,17,32,33},
+		needs=needed_comps({{1, 3}, {4, 3}, {5, 3}})
+	} -- night googles
 }
 
 local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
@@ -49,6 +62,10 @@ nc = {
 		end
 	end
 }
+
+function clamp(val, minimun, maximum)
+	return min(maximum, max(minimun, val))
+end
 
 function merged(t1, t2)
 	local new = {}
@@ -497,39 +514,75 @@ function new_factory()
 	}
 end
 
-function new_warehouse(comps)
-	local counter = {}
+function new_item(item_spec)
+	local x, y = 0, 0
 
-	for comp in all(comps) do
-		counter[comp.s] = 0
+	return {
+		pos=function(new_x, new_y)
+			x = new_x
+			y = new_y
+		end,
+
+		can_assemble=function(stored_comps)
+			for comp, amount in pairs(item_spec.needs) do
+				if (stored_comps[comp] or 0) < amount then
+					return false
+				end
+
+				return true
+			end
+		end,
+
+		draw=function()
+			spr(item_spec.ss[1], x, y)
+			spr(item_spec.ss[2], x + 8, y)
+			spr(item_spec.ss[3], x, y + 8)
+			spr(item_spec.ss[4], x + 8, y + 8)
+		end,
+
+		draw_needs=function(stored_comps)
+			local count = 0
+			for comp, amount in pairs(item_spec.needs) do
+				local needed_amount = clamp(amount - (stored_comps[comp] or 0), 0, amount)
+				local ry = y + 16 + (count * 10)
+				spr(comp, x - 2, ry)
+				print('x'..(needed_amount > 9 and '' or '0')..tostr(needed_amount), x + 8, ry + 2, 7)
+				count = count + 1
+			end
+		end
+	}
+end
+
+function new_customer(item)
+	item.pos(56, 34)
+
+	stored_comps = {}
+
+	function store(comp)
+		stored_comps[comp] = (stored_comps[comp] or 0) + 1
 	end
 
-	function stock(comp)
-		counter[comp] = counter[comp] + 1
-	end
-
-	nc:listen('component_unwrapped', stock)
+	nc:listen('component_unwrapped', store)
 
 	return {
 		draw=function()
+			print('want', 57, 29, 7)
 			rect(52, 27, 76, 108, 5)
-			for i, comp in pairs(comps) do
-				local amount = counter[comp.s]
-				local y = 2 * i + 8 * (i -1) + 27
-				spr(comp.s, 54, y)
-				print('x'..(amount > 9 and '' or '0')..tostr(amount), 64, y + 2, 7)
-			end
+			item:draw()
+			item.draw_needs(stored_comps)
 		end
 	}
 end
 
 -->8
 -- game loop
+local machine, factory, warehouse, director, customer
+
 function _init()
-	warehouse = new_warehouse(g_comps)
 	factory = new_factory()
 	machine = new_machine()
 	machine:turn_on()
+	customer = new_customer(new_item(g_items_spec[1]))
 end
 
 function _update60()
@@ -539,8 +592,8 @@ end
 function _draw()
 	cls()
 	machine:draw()
-	warehouse:draw()
 	factory:draw()
+	customer:draw()
 end
 
 __gfx__
@@ -552,3 +605,16 @@ __gfx__
 0070070067577776049aa94002e88e20dd76dd50cca9aaccbba9bbbb55dd11d5889aa98000000000000000000000000000000000000000000000000000000000
 00000000567777650049940002e8ee200dddd500cccaaccc3bbbbbb3055ddd55089aaa9000000000000000000000000000000000000000000000000000000000
 0000000005666650000440000412224000dd5000ccc66ccc0b300b3000555550009aa90000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000080aa00000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000080aa9a0000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000800a9aa0008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0080000aa00080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888088808880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08ccc80008ccc8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08ccc80008ccc8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08ccc80008ccc8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
