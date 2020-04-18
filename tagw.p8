@@ -583,10 +583,11 @@ function new_item(item_spec, ix, iy)
 end
 
 function new_customer()
-	local item, stored_comps, assembling_items = nil, {}, {}
+	local item, stored_comps, assembling_items = nil, nil, {}
 
 	function order()
 		item = new_item(g_items_spec[1], 56, 34)
+		stored_comps = {}
 	end
 
 	function store(comp)
