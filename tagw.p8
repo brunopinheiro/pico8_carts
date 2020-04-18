@@ -4,12 +4,13 @@ __lua__
 -- the amazing goblin's workshop
 --   by brunopinheiro
 
--- "dictionary"
---	act: active
---	comp: component
--- 	comps: components
---	wc: wrapped component
--- 	wcs: wrapped components
+-- "glossary"
+--		act: active
+--		comp: component
+-- 		comps: components
+--		nc: notification center
+--		wc: wrapped component
+-- 		wcs: wrapped components
 
 -- core
 printh('::::: new :::::')
@@ -29,7 +30,7 @@ local g_comps={
 
 local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
 
-notification_center = {
+nc = {
 	events={},
 
 	notify=function(self, event, params)
@@ -149,7 +150,7 @@ function new_machine()
 	local ix, iy, fx, fy = 2, 2, 42, 98
 
 	function run(self)
-		notification_center:notify(check_game_over() and 'machine_jammed' or 'request_triple')
+		nc:notify(check_game_over() and 'machine_jammed' or 'request_triple')
 	end
 
 	function glue()
@@ -274,8 +275,8 @@ function new_machine()
 		return false
 	end
 
-	notification_center:listen('triple_glued', glue)
-	notification_center:listen('triple_produced', set_act_triple)
+	nc:listen('triple_glued', glue)
+	nc:listen('triple_produced', set_act_triple)
 
 	return {
 		max_y=max_y,
@@ -325,7 +326,7 @@ function new_triple(comps)
 	local glue_attempts = 0
 
 	function glue_itself()
-		notification_center:notify('triple_glued')
+		nc:notify('triple_glued')
 	end
 
 	function try_swap()
@@ -446,7 +447,7 @@ function new_wc(sprite, x, y)
 					self.visible = not self.visible
 					if not running_loop then
 						callback(self)
-						notification_center:notify('component_unwrapped', self.sprite)
+						nc:notify('component_unwrapped', self.sprite)
 					end
 				end,
 				loops=8
@@ -475,14 +476,14 @@ function new_factory()
 
 		next_triple.set_pos(66, 1)
 
-		notification_center:notify('triple_produced', new_triple({
+		nc:notify('triple_produced', new_triple({
 			g_comps[1],
 			g_comps[2],
 			g_comps[3]
 		}))
 	end
 
-	notification_center:listen('request_triple', produce)
+	nc:listen('request_triple', produce)
 
 	return {
 		draw=function()
@@ -496,26 +497,26 @@ function new_factory()
 	}
 end
 
-function new_warehouse(components)
+function new_warehouse(comps)
 	local counter = {}
 
-	for component in all(components) do
-		counter[component.s] = 0
+	for comp in all(comps) do
+		counter[comp.s] = 0
 	end
 
-	function stock(component)
-		counter[component] = counter[component] + 1
+	function stock(comp)
+		counter[comp] = counter[comp] + 1
 	end
 
-	notification_center:listen('component_unwrapped', stock)
+	nc:listen('component_unwrapped', stock)
 
 	return {
 		draw=function()
 			rect(52, 27, 76, 108, 5)
-			for i, component in pairs(components) do
-				local amount = counter[component.s]
+			for i, comp in pairs(comps) do
+				local amount = counter[comp.s]
 				local y = 2 * i + 8 * (i -1) + 27
-				spr(component.s, 54, y)
+				spr(comp.s, 54, y)
 				print('x'..(amount > 9 and '' or '0')..tostr(amount), 64, y + 2, 7)
 			end
 		end
