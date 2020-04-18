@@ -93,9 +93,11 @@ function new_animator()
 		end,
 
 		update=function(self)
-			local completed={}
+			local completed = {}
 			for k, anim in pairs(self.animations) do
-				if not anim.update() then completed[k] = anim end
+				if not anim.update() then
+					completed[k] = anim
+				end
 			end
 			for k, anim in pairs(completed) do
 				self:stop(k)
@@ -107,6 +109,14 @@ end
 
 function linear_ease(initial, final, time, duration)
 	return (final - initial) * time/duration + initial
+end
+
+function in_back_ease(overshoot)
+	overshoot = overshoot or 1.70158
+	return function(initial, final, time, duration)
+		local elapsed = time/duration
+		return (final - initial) * (elapsed ^ 2) * ((overshoot + 1) * elapsed - overshoot) + initial
+	end
 end
 
 function delayed(animator, name, args)
@@ -139,7 +149,7 @@ function animate(animator, name, args)
 
 	local ease_update = function()
 		local td = time() - it
-		target[attr]=ease(ov, fv, td, duration)
+		target[attr] = ease(ov, fv, td, duration)
 		return td < duration
 	end
 
@@ -155,7 +165,7 @@ function animate(animator, name, args)
 
 	animator:add(
 		name,
-		ease_update
+		ease_update,
 		(loops ~= 0) and loop_callback or callback
 	)
 end
@@ -487,16 +497,16 @@ function new_factory()
 	function produce()
 		next_triple = new_triple({
 			g_comps[1],
-			g_comps[2],
-			g_comps[3]
+			g_comps[4],
+			g_comps[5]
 		})
 
 		next_triple.set_pos(66, 1)
 
 		nc:notify('triple_produced', new_triple({
 			g_comps[1],
-			g_comps[2],
-			g_comps[3]
+			g_comps[4],
+			g_comps[5]
 		}))
 	end
 
@@ -514,13 +524,21 @@ function new_factory()
 	}
 end
 
-function new_item(item_spec)
-	local x, y = 0, 0
+function new_item(item_spec, ix, iy)
+	local animator = new_animator()
 
 	return {
-		pos=function(new_x, new_y)
-			x = new_x
-			y = new_y
+		x=ix, y=iy,
+
+		update=function()
+			animator:update()
+		end,
+
+		draw=function(self)
+			spr(item_spec.ss[1], self.x, self.y)
+			spr(item_spec.ss[2], self.x + 8, self.y)
+			spr(item_spec.ss[3], self.x, self.y + 8)
+			spr(item_spec.ss[4], self.x + 8, self.y + 8)
 		end,
 
 		can_assemble=function(stored_comps)
@@ -528,48 +546,79 @@ function new_item(item_spec)
 				if (stored_comps[comp] or 0) < amount then
 					return false
 				end
-
-				return true
 			end
+
+			return true
 		end,
 
-		draw=function()
-			spr(item_spec.ss[1], x, y)
-			spr(item_spec.ss[2], x + 8, y)
-			spr(item_spec.ss[3], x, y + 8)
-			spr(item_spec.ss[4], x + 8, y + 8)
-		end,
-
-		draw_needs=function(stored_comps)
+		draw_needs=function(self, stored_comps)
 			local count = 0
 			for comp, amount in pairs(item_spec.needs) do
 				local needed_amount = clamp(amount - (stored_comps[comp] or 0), 0, amount)
-				local ry = y + 16 + (count * 10)
-				spr(comp, x - 2, ry)
-				print('x'..(needed_amount > 9 and '' or '0')..tostr(needed_amount), x + 8, ry + 2, 7)
+				local ry = self.y + 16 + (count * 10)
+				spr(comp, self.x - 2, ry)
+				print('x'..(needed_amount > 9 and '' or '0')..tostr(needed_amount), self.x + 8, ry + 2, 7)
 				count = count + 1
 			end
+		end,
+
+		disappear=function(self, callback)
+			animate(animator, 'falling_y', {
+				target=self,
+				ease=in_back_ease(2),
+				attr='y',
+				duration=0.8,
+				callback=function() callback(self) end,
+				fv=140
+			})
+
+			animate(animator, 'falling_x', {
+				target=self,
+				attr='x',
+				duration=0.8,
+				fv=ix+10
+			})
 		end
 	}
 end
 
-function new_customer(item)
-	item.pos(56, 34)
+function new_customer()
+	local item, stored_comps, assembling_items = nil, {}, {}
 
-	stored_comps = {}
+	function order()
+		item = new_item(g_items_spec[1], 56, 34)
+	end
 
 	function store(comp)
 		stored_comps[comp] = (stored_comps[comp] or 0) + 1
+
+		if item.can_assemble(stored_comps) then
+			item:disappear(function(i) del(assembling_items, i) end)
+			add(assembling_items, item)
+			order()
+		end
 	end
 
 	nc:listen('component_unwrapped', store)
+	order()
 
 	return {
+		update=function()
+			for assembling_item in all(assembling_items) do
+				assembling_item:update()
+			end
+		end,
+
 		draw=function()
 			print('want', 57, 29, 7)
 			rect(52, 27, 76, 108, 5)
+
 			item:draw()
-			item.draw_needs(stored_comps)
+			item:draw_needs(stored_comps)
+
+			for assembling_item in all(assembling_items) do
+				assembling_item:draw()
+			end
 		end
 	}
 end
@@ -582,11 +631,12 @@ function _init()
 	factory = new_factory()
 	machine = new_machine()
 	machine:turn_on()
-	customer = new_customer(new_item(g_items_spec[1]))
+	customer = new_customer()
 end
 
 function _update60()
 	machine:update()
+	customer:update()
 end
 
 function _draw()
@@ -609,12 +659,15 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000080aa00000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000080aa9a0000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000800a9aa0008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0080000aa00080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00888088808880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08ccc80008ccc8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08ccc80008ccc8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08ccc80008ccc8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00888000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000080aa00000080006666666666666000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000080aa9a0000800066111111111116000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000800a9aa0008000661111111111167000008000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0080000aa00080006666666666666679000088800088800000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888088808880006777988897777679000880080880880000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08ccc80008ccc8006777988897777679000880882800880000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08ccc80008ccc8006777988897777679006688828288866600000000000000000000000000000000000000000000000000000000000000000000000000000000
+08ccc80008ccc8006777988897777679066777988897777600000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888000008880006777988897777679666666666666666600000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000006777988897777660667779888977777600000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000006777988897777600677779888977776000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000006666666666666000666666666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000
