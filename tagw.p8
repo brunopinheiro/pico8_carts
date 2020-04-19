@@ -7,10 +7,12 @@ __lua__
 -- "glossary"
 --			act: active
 --			comp: component
--- 		comps: components
+-- 			comps: components
 --			nc: notification center
+--			obj: object
+--			objs: objects
 --			wc: wrapped component
--- 		wcs: wrapped components
+-- 			wcs: wrapped components
 
 -- core
 printh('::::: new :::::')
@@ -165,7 +167,7 @@ function new_machine()
 	local act_triple, animator, wcs = nil, new_animator(), {}
 	local ix, iy, fx, fy = 2, 2, 42, 98
 
-	function run(self)
+	function request_triple(self)
 		nc:notify(check_game_over() and 'machine_jammed' or 'request_triple')
 	end
 
@@ -223,7 +225,7 @@ function new_machine()
 		if remove_marked() then
 			delayed(animator, 'wait_gravity', { duration = 2.2, callback=function() gravity() end })
 		else
-			run()
+			request_triple()
 		end
 	end
 
@@ -269,7 +271,7 @@ function new_machine()
 		if moved then
 			collect()
 		else
-			run()
+			request_triple()
 		end
 	end
 
@@ -291,12 +293,17 @@ function new_machine()
 		return false
 	end
 
-	nc:listen('triple_glued', glue)
-	nc:listen('triple_produced', set_act_triple)
-
 	return {
 		max_y=max_y,
-		turn_on=run,
+
+		init=function()
+			nc:listen('triple_glued', glue)
+			nc:listen('triple_produced', set_act_triple)
+		end,
+
+		run=function()
+			request_triple()
+		end,
 
 		move_bounds=function(x, y)
 			return {
@@ -330,6 +337,11 @@ function new_machine()
 
 			rect(0, 0, 50, 108, 13)
 			rect(1, 1, 49, 107, 6)
+		end,
+
+		unload=function()
+			nc:stop('triple_glued', glue)
+			nc:stop('triple_produced', set_act_triple)
 		end
 	}
 end
@@ -499,9 +511,11 @@ function new_factory()
 		}))
 	end
 
-	nc:listen('request_triple', produce)
-
 	return {
+		init=function()
+			nc:listen('request_triple', produce)
+		end,
+
 		draw=function()
 			print('n', 56, 1)
 			print('e', 56, 7)
@@ -509,6 +523,10 @@ function new_factory()
 			print('t', 56, 19)
 			rect(52, 0, 76, 25, 5)
 			next_triple.draw()
+		end,
+
+		unload=function()
+			nc:stop('request_triple', produce)
 		end
 	}
 end
@@ -604,10 +622,15 @@ function new_customer(needed_items)
 		end
 	end
 
-	nc:listen('component_unwrapped', store)
-	order()
-
 	return {
+		init=function()
+			nc:listen('component_unwrapped', store)
+		end,
+
+		run=function()
+			order()
+		end,
+
 		update=function()
 			for assembling_item in all(assembling_items) do
 				assembling_item:update()
@@ -626,33 +649,63 @@ function new_customer(needed_items)
 			for assembling_item in all(assembling_items) do
 				assembling_item:draw()
 			end
+		end,
+
+		unload=function()
+			nc:stop('component_unwrapped', store)
 		end
 	}
 end
 
 -->8
--- game loop
-local machine, factory, warehouse, director, customer
+-- scenes and levels
+function new_scene(objs)
+	objs = objs or {}
 
-function _init()
-	factory = new_factory()
-	machine = new_machine()
-	machine:turn_on()
-	customer = new_customer({
-		new_item(g_items_sprites[1], { {1, 10}, {4, 15}, {5, 20} })
+	function for_each(method)
+		return function()
+			for obj in all(objs) do
+				if obj[method] then obj[method](obj) end
+			end
+		end
+	end
+
+	return {
+		init=for_each('init'),
+		run=for_each('run'),
+		update=for_each('update'),
+		draw=for_each('draw')
+	}
+end
+
+function new_level(items)
+	return new_scene({
+		new_machine(),
+		new_factory(),
+		new_customer(items)
 	})
 end
 
+-->8
+-- game loop
+local level_one
+
+function _init()
+	level_one = new_level({
+		new_item(g_items_sprites[1], { {1, 10}, {4, 15}, {5, 20} })
+	})
+
+	level_one:init()
+	level_one:run()
+end
+
 function _update60()
-	machine:update()
-	customer:update()
+	level_one:update()
 end
 
 function _draw()
 	cls()
-	machine:draw()
-	factory:draw()
-	customer:draw()
+	level_one:draw()
 end
 
 __gfx__
