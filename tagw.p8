@@ -7,12 +7,11 @@ __lua__
 -- "glossary"
 --			act: active
 --			comp: component
--- 			comps: components
+--			idx: index
 --			nc: notification center
 --			obj: object
---			objs: objects
+--			txt: text
 --			wc: wrapped component
--- 			wcs: wrapped components
 
 -- core
 printh('::::: new :::::')
@@ -28,8 +27,12 @@ local g_comps={
 	{s=8,  c=8}  -- fire
 }
 
-local g_items_sprites={
+local g_items={
 	{16,17,32,33} -- night googles
+}
+
+local g_characters={
+	{64,65,80,81} -- dragon
 }
 
 local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
@@ -53,6 +56,25 @@ nc = {
 		end
 	end
 }
+
+function spr4(sprites, x, y)
+	spr(sprites[1], x, y)
+	spr(sprites[2], x + 8, y)
+	spr(sprites[3], x, y + 8)
+	spr(sprites[4], x + 8, y + 8)
+end
+
+function int_hash_from(kvpairs)
+	local hash = {}
+	for kv in all(kvpairs) do
+		hash[kv[1]] = kv[2]
+	end
+	return hash
+end
+
+function try_call(obj, method, params)
+	if obj and obj[method] then obj[method](obj, params) end
+end
 
 function clamp(val, minimun, maximum)
 	return min(maximum, max(minimun, val))
@@ -92,7 +114,7 @@ function new_animator()
 			end
 			for k, anim in pairs(completed) do
 				self:stop(k)
-				if anim.callback then anim.callback(anim) end
+				try_call(anim, 'callback')
 			end
 		end
 	}
@@ -320,9 +342,7 @@ function new_machine()
 				wc:update()
 			end
 
-			if act_triple then
-				act_triple.update(self)
-			end
+			try_call(act_triple, 'update', self)
 		end,
 
 		draw=function(self)
@@ -330,10 +350,8 @@ function new_machine()
 				wc:draw()
 			end
 
-			if act_triple then
-				act_triple.draw()
-				act_triple.preview(self)
-			end
+			try_call(act_triple, 'draw')
+			try_call(act_triple, 'preview', self)
 
 			rect(0, 0, 50, 108, 13)
 			rect(1, 1, 49, 107, 6)
@@ -433,11 +451,11 @@ function new_triple(comps)
 			y=new_y
 		end,
 
-		component=function(index)
-			return comps[index]
+		component=function(idx)
+			return comps[idx]
 		end,
 
-		update=function(machine)
+		update=function(self, machine)
 			animator:update()
 			try_swap()
 			try_speedup()
@@ -445,13 +463,13 @@ function new_triple(comps)
 			move(machine.move_bounds(x, y + 16))
 		end,
 
-		draw=function()
+		draw=function(self, machine)
 			for i, comp in pairs(comps) do
 				spr(comp.s, x, y + (i - 1) * 8)
 			end
 		end,
 
-		preview=function(machine)
+		preview=function(self, machine)
 			for i, comp in pairs(comps) do
 				local comp_preview_y = machine.max_y(x) - (3 - i) * 8
 				rect(x, comp_preview_y, x + 8, comp_preview_y + 7, comp.c)
@@ -522,7 +540,8 @@ function new_factory()
 			print('x', 56, 13)
 			print('t', 56, 19)
 			rect(52, 0, 76, 25, 5)
-			next_triple.draw()
+
+			try_call(next_triple, 'draw')
 		end,
 
 		unload=function()
@@ -531,13 +550,8 @@ function new_factory()
 	}
 end
 
-function new_item(sprites, needed_comps)
-	local x, y = 56, 34
-	local animator, needed_comps_hash = new_animator(), {}
-
-	for needed_comp in all(needed_comps) do
-		needed_comps_hash[needed_comp[1]] = needed_comp[2]
-	end
+function new_item(item_idx, needed_comps)
+	local x, y, animator = 56, 34, new_animator()
 
 	return {
 		pos=function(new_x, new_y)
@@ -550,14 +564,11 @@ function new_item(sprites, needed_comps)
 		end,
 
 		draw=function()
-			spr(sprites[1], x, y)
-			spr(sprites[2], x + 8, y)
-			spr(sprites[3], x, y + 8)
-			spr(sprites[4], x + 8, y + 8)
+			spr4(g_items[item_idx], x, y)
 		end,
 
 		can_assemble=function(stored_comps)
-			for comp, amount in pairs(needed_comps_hash) do
+			for comp, amount in pairs(needed_comps) do
 				if (stored_comps[comp] or 0) < amount then
 					return false
 				end
@@ -568,7 +579,7 @@ function new_item(sprites, needed_comps)
 
 		draw_needs=function(self, stored_comps)
 			local count = 0
-			for comp, amount in pairs(needed_comps_hash) do
+			for comp, amount in pairs(needed_comps) do
 				local needed_amount = clamp(amount - (stored_comps[comp] or 0), 0, amount)
 				local ry = y + 16 + (count * 10)
 				spr(comp, x - 2, ry)
@@ -598,17 +609,17 @@ function new_item(sprites, needed_comps)
 end
 
 function new_customer(needed_items)
-	local item, current_item_index, stored_comps, assembling_items = nil, 0, nil, {}
+	local item, current_item_idx, stored_comps, assembling_items = nil, 0, nil, {}
 
 	function order()
-		current_item_index = current_item_index + 1
+		current_item_idx = current_item_idx + 1
 		stored_comps = {}
 
-		if current_item_index > #needed_items then
+		if current_item_idx > #needed_items then
 			item = nil
 			nc:listen('shop_list_completed')
 		else
-			item = needed_items[current_item_index]
+			item = needed_items[current_item_idx]
 		end
 	end
 
@@ -641,10 +652,8 @@ function new_customer(needed_items)
 			print('want', 57, 29, 7)
 			rect(52, 27, 76, 108, 5)
 
-			if item then
-				item:draw()
-				item:draw_needs(stored_comps)
-			end
+			try_call(item, 'draw')
+			try_call(item, 'draw_needs', stored_comps)
 
 			for assembling_item in all(assembling_items) do
 				assembling_item:draw()
@@ -653,6 +662,114 @@ function new_customer(needed_items)
 
 		unload=function()
 			nc:stop('component_unwrapped', store)
+		end
+	}
+end
+
+-->8
+-- dialog
+function new_typped_txt(txt, x, y, callback)
+	local animator, completed, char_idx = new_animator(), false, 1
+
+	function type(running_loop)
+		if running_loop then
+			char_idx = char_idx + 1
+		else
+			stop()
+		end
+	end
+
+	function stop()
+		animator:stop('typping')
+		char_idx = #txt
+		completed = true
+	end
+
+	return {
+		run=function()
+			delayed(animator, 'typping', { duration=0.05, callback=type, loops=#txt - 1 })
+		end,
+
+		update=function(self)
+			animator:update()
+
+			if completed and btnp(g_buttons.o) then
+				callback()
+			end
+		end,
+
+		draw=function(self)
+			print(sub(txt, 1, char_idx), x, y)
+		end
+	}
+end
+
+function new_dialog(speeches, character, callback)
+	local visible, speaking, typped_txt = false, false, nil
+	local current_speech_idx, animator = 1, new_animator()
+
+	function current_txt()
+		return speeches[current_speech_idx]
+	end
+
+	function current_char()
+		return g_characters[character]
+	end
+
+	local next_line
+	next_line = function()
+		if current_speech_idx > #speeches then
+			typped_txt = nil
+			speaking = false
+			callback()
+		else
+			typped_txt = new_typped_txt(current_txt(), 23, 62, next_line)
+			typped_txt:run()
+			current_speech_idx = current_speech_idx + 1
+		end
+	end
+
+	function start_speak()
+		speaking = true
+		next_line()
+	end
+
+	return {
+		l=64, r=64, t=64, b=64,
+
+		open=function(self)
+			visible = true
+			animate(animator, 'open_l', { target=self, attr='l', duration=0.5, fv=2, callback=start_speak })
+			animate(animator, 'open_r', { target=self, attr='r', duration=0.5, fv=126 })
+			animate(animator, 'open_t', { target=self, attr='t', duration=0.3, fv=54 })
+			animate(animator, 'open_b', { target=self, attr='b', duration=0.3, fv=74 })
+		end,
+
+		close=function(self)
+			speaking = false
+			animate(animator, 'open_l', { target=self, attr='l', duration=0.5, fv=64, callback=function() visible = false end })
+			animate(animator, 'open_r', { target=self, attr='r', duration=0.5, fv=64 })
+			animate(animator, 'open_t', { target=self, attr='t', duration=0.3, fv=64 })
+			animate(animator, 'open_b', { target=self, attr='b', duration=0.3, fv=64 })
+		end,
+
+		update=function()
+			animator:update()
+
+			try_call(typped_txt, 'update')
+		end,
+
+		draw=function(self)
+			if not visible then return end
+
+			rectfill(self.l, self.t, self.r, self.b, 7)
+			rect(self.l + 1, self.t + 1, self.r - 1, self.b - 1, 6)
+
+			if speaking then
+				spr4(current_char(), 5, 56)
+			end
+
+			try_call(typped_txt, 'draw')
 		end
 	}
 end
@@ -672,17 +789,24 @@ function new_scene(objs)
 
 	return {
 		init=for_each('init'),
-		run=for_each('run'),
 		update=for_each('update'),
 		draw=for_each('draw')
 	}
 end
 
-function new_level(items)
-	return new_scene({
-		new_machine(),
-		new_factory(),
-		new_customer(items)
+function new_level(txts, items)
+	local machine, factory, customer, dialog = new_machine(), new_factory(), new_customer(items), nil
+
+	dialog = new_dialog(txts, 1, function()
+		machine:run()
+		customer:run()
+		dialog:close()
+	end)
+
+	return merged(new_scene({ machine, factory, customer, dialog }), {
+		run=function()
+			dialog:open()
+		end
 	})
 end
 
@@ -691,9 +815,10 @@ end
 local level_one
 
 function _init()
-	level_one = new_level({
-		new_item(g_items_sprites[1], { {1, 10}, {4, 15}, {5, 20} })
-	})
+	level_one = new_level(
+		{ 'hello?!', 'is anyone home?' },
+		{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
+	)
 
 	level_one:init()
 	level_one:run()
@@ -745,9 +870,9 @@ __gfx__
 00000000868886000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000ccc688ccc800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000c777c8c777c80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000c70007c70007c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000c70007c70007c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000c70007c70007c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000c71117c71117c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000c71117c71117c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000c71117c71117c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0002c777c8c777c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00288ccc888ccc020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 02888882888888220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
