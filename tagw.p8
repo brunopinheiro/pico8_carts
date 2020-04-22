@@ -513,25 +513,26 @@ function new_wc(sprite, x, y)
 end
 
 function new_factory()
+	local needed_comps, next_triple_comps = {}, nil
+
+	function update_needed_comps(comps)
+		needed_comps = comps
+	end
+
+	function random_comp()
+		return g_comps[needed_comps[flr(rnd(#needed_comps)) + 1]]
+	end
+
 	function produce()
-		next_triple = new_triple({
-			g_comps[1],
-			g_comps[4],
-			g_comps[5]
-		})
-
-		next_triple.set_pos(66, 1)
-
-		nc:notify('triple_produced', new_triple({
-			g_comps[1],
-			g_comps[4],
-			g_comps[5]
-		}))
+		local generating_comps = next_triple_comps and next_triple_comps or { random_comp(), random_comp(), random_comp() }
+		next_triple_comps = { random_comp(), random_comp(), random_comp() }
+		nc:notify('triple_produced', new_triple(generating_comps))
 	end
 
 	return {
 		init=function()
 			nc:listen('request_triple', produce)
+			nc:listen('needed_comps', update_needed_comps)
 		end,
 
 		draw=function()
@@ -541,11 +542,16 @@ function new_factory()
 			print('t', 56, 19)
 			rect(52, 0, 76, 25, 5)
 
-			try_call(next_triple, 'draw')
+			if next_triple_comps then
+				spr(next_triple_comps[1].s, 66, 1)
+				spr(next_triple_comps[2].s, 66, 9)
+				spr(next_triple_comps[3].s, 66, 17)
+			end
 		end,
 
 		unload=function()
 			nc:stop('request_triple', produce)
+			nc:stop('needed_comps', update_needed_comps)
 		end
 	}
 end
@@ -566,6 +572,12 @@ function new_item(item_idx, needed_comps)
 		draw=function()
 			spr4(g_items[item_idx], x, y)
 		end,
+
+		needed_comps=function()
+			local comps = {}
+			for comp, _ in pairs(needed_comps) do add(comps, comp) end
+			return comps
+	  end,
 
 		can_assemble=function(stored_comps)
 			for comp, amount in pairs(needed_comps) do
@@ -617,9 +629,10 @@ function new_customer(needed_items)
 
 		if current_item_idx > #needed_items then
 			item = nil
-			nc:listen('shop_list_completed')
+			nc:notify('shop_list_completed')
 		else
 			item = needed_items[current_item_idx]
+			nc:notify('needed_comps', item and item.needed_comps() or {})
 		end
 	end
 
@@ -798,8 +811,8 @@ function new_level(txts, items)
 	local machine, factory, customer, dialog = new_machine(), new_factory(), new_customer(items), nil
 
 	dialog = new_dialog(txts, 1, function()
-		machine:run()
 		customer:run()
+		machine:run()
 		dialog:close()
 	end)
 
