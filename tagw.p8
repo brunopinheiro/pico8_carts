@@ -246,6 +246,7 @@ function new_machine()
 
 		if remove_marked() then
 			delayed(animator, 'wait_gravity', { duration = 2.2, callback=function() gravity() end })
+			nc:notify('comps_unwrapped')
 		else
 			request_triple()
 		end
@@ -557,20 +558,18 @@ function new_factory()
 end
 
 function new_item(item_idx, needed_comps)
-	local x, y, animator = 56, 34, new_animator()
+	local animator = new_animator()
 
 	return {
-		pos=function(new_x, new_y)
-			x = new_x
-			y = new_y
-		end,
+		x = 56,
+		y = 34,
 
 		update=function()
 			animator:update()
 		end,
 
-		draw=function()
-			spr4(g_items[item_idx], x, y)
+		draw=function(self)
+			spr4(g_items[item_idx], self.x, self.y)
 		end,
 
 		needed_comps=function()
@@ -593,9 +592,9 @@ function new_item(item_idx, needed_comps)
 			local count = 0
 			for comp, amount in pairs(needed_comps) do
 				local needed_amount = clamp(amount - (stored_comps[comp] or 0), 0, amount)
-				local ry = y + 16 + (count * 10)
-				spr(comp, x - 2, ry)
-				print('x'..(needed_amount > 9 and '' or '0')..tostr(needed_amount), x + 8, ry + 2, 7)
+				local ry = self.y + 16 + (count * 10)
+				spr(comp, self.x - 2, ry)
+				print('x'..(needed_amount > 9 and '' or '0')..tostr(needed_amount), self.x + 8, ry + 2, 7)
 				count = count + 1
 			end
 		end,
@@ -614,7 +613,7 @@ function new_item(item_idx, needed_comps)
 				target=self,
 				attr='x',
 				duration=0.8,
-				fv=x+10
+				fv=self.x+10
 			})
 		end
 	}
@@ -680,7 +679,7 @@ function new_customer(needed_items)
 end
 
 -->8
--- dialog
+-- UI
 function new_typped_txt(txt, x, y, callback)
 	local animator, completed, char_idx = new_animator(), false, 1
 
@@ -787,6 +786,36 @@ function new_dialog(speeches, character, callback)
 	}
 end
 
+function new_combo_counter()
+	local count = 0
+
+	function count_combo()
+		count = count + 1
+		-- todo: animate combo
+	end
+
+	function reset_combo()
+		count = 0
+		-- todo: wait for the animation to reset value
+	end
+
+	return {
+		init=function(self)
+			nc:listen('comps_unwrapped', count_combo)
+			nc:listen('request_triple', reset_combo)
+		end,
+
+		unload=function(self)
+			nc:listen('comps_unwrapped', count_combo)
+			nc:listen('request_triple', reset_combo)
+		end,
+
+		draw=function(self)
+			print('combo: '..count, 78, 2, 7)
+		end
+	}
+end
+
 -->8
 -- scenes and levels
 function new_scene(objs)
@@ -816,7 +845,7 @@ function new_level(txts, items)
 		dialog:close()
 	end)
 
-	return merged(new_scene({ machine, factory, customer, dialog }), {
+	return merged(new_scene({ machine, factory, customer, dialog, new_combo_counter() }), {
 		run=function()
 			dialog:open()
 		end
