@@ -787,16 +787,22 @@ function new_dialog(speeches, character, callback)
 end
 
 function new_combo_counter()
-	local count = 0
+	local count, blink, animator = 0, false, new_animator()
 
 	function count_combo()
 		count = count + 1
-		-- todo: animate combo
+		delayed(animator, 'blink', {
+			loops=10,
+			duration=0.3,
+			callback=function(looping)
+				blink = not looping and false or not blink
+			end
+		})
 	end
 
 	function reset_combo()
 		count = 0
-		-- todo: wait for the animation to reset value
+		blink = false
 	end
 
 	return {
@@ -811,7 +817,13 @@ function new_combo_counter()
 		end,
 
 		draw=function(self)
-			print('combo: '..count, 78, 2, 7)
+			if count > 1 then
+				print('combo: '..count, 2, 112, blink and 10 or 8)
+			end
+		end,
+
+		update=function(self)
+			animator:update()
 		end
 	}
 end
