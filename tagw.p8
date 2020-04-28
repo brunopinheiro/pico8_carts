@@ -16,6 +16,8 @@ __lua__
 -- core
 printh('::::: new :::::')
 
+local g_particles_pool
+
 local g_comps={
 	{s=1,  c=6}, -- screw
 	{s=2,  c=9}, -- gear
@@ -442,7 +444,7 @@ function new_triple(comps)
 		wcs=function()
 			local wcs = {}
 			for i=1, 3 do
-				add(wcs, new_wc(comps[i].s, x, y + (i - 1) * 8))
+				add(wcs, new_wc(comps[i].s, comps[i].c, x, y + (i - 1) * 8))
 			end
 			return wcs
 		end,
@@ -479,12 +481,25 @@ function new_triple(comps)
 	}
 end
 
-function new_wc(sprite, x, y)
+function new_wc(sprite, color, x, y)
 	local animator = new_animator()
+
+	function throw_particles(x, y, color)
+		for i=5, flr(rnd(4) + 6), 1 do
+				g_particles_pool:add(new_particle(
+							x,
+							y,
+							rnd(2) + 1,
+							color,
+							{ x=rnd(4) - 2, y=-rnd(4) }
+				))
+		end
+	end
 
 	return {
 		x=x, y=y,
 		sprite=sprite,
+		color=color,
 		visible=true,
 
 		unwrap=function(self, callback)
@@ -493,6 +508,7 @@ function new_wc(sprite, x, y)
 				callback=function(running_loop)
 					self.visible = not self.visible
 					if not running_loop then
+						throw_particles(self.x, self.y, self.color)
 						callback(self)
 						nc:notify('component_unwrapped', self.sprite)
 					end
@@ -675,6 +691,73 @@ function new_customer(needed_items)
 		unload=function()
 			nc:stop('component_unwrapped', store)
 		end
+	}
+end
+
+-->8
+-- particles
+function new_particles_pool()
+	local particles = {}
+
+	function remove_particle(particle)
+		del(particles, particle)
+	end
+
+	return {
+		add=function(self, particle)
+			particle.on_disappear = remove_particle
+			add(particles, particle)
+			particle:init()
+		end,
+
+		update=function(self)
+			for particle in all(particles) do
+				particle:update()
+			end
+		end,
+
+		draw=function(self)
+			printh(#particles)
+			for particle in all(particles) do
+				particle:draw()
+			end
+		end
+	}
+end
+
+g_particles_pool = new_particles_pool()
+
+function new_particle(x, y, radius, color, impulse)
+	local animator = new_animator()
+
+	return {
+			x=x, y=y,
+			impulse=impulse,
+			radius=radius,
+			color=color,
+
+			on_disappear=function() end,
+
+			init=function(self)
+				animate(animator, 'radius', {
+					target=self,
+					attr='radius',
+					fv=0,
+					duration=radius,
+					callback=function() self:on_disappear() end
+				})
+			end,
+
+			update=function(self)
+				self.impulse.y = self.impulse.y + 0.1
+				self.x = self.x + self.impulse.x
+				self.y = self.y + self.impulse.y
+				animator:update()
+			end,
+
+			draw=function(self)
+				circfill(self.x, self.y, self.radius, self.color)
+			end
 	}
 end
 
@@ -880,11 +963,13 @@ end
 
 function _update60()
 	level_one:update()
+	g_particles_pool:update()
 end
 
 function _draw()
 	cls()
 	level_one:draw()
+	g_particles_pool:draw()
 end
 
 __gfx__
