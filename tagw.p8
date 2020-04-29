@@ -126,6 +126,24 @@ function linear_ease(initial, final, time, duration)
 	return (final - initial) * time/duration + initial
 end
 
+function out_bounce_ease(initial, final, time, duration)
+	local elapsed = time/duration
+	local modifier = 0
+	if elapsed < 1/2.75 then
+		elapsed = elapsed
+	elseif elapsed < 2/2.75 then
+		elapsed = elapsed - 1.5/2.75
+		modifier = 0.75
+	elseif elapsed < 2.5/2.75 then
+		elapsed = elapsed - 2.25/2.75
+		modifier = 0.9375
+	else
+		elapsed = elapsed - 2.625/2.75
+		modifier = 0.984375
+	end
+	return (final - initial) * (7.5625 * (elapsed^2) + modifier) + initial
+end
+
 function in_back_ease(overshoot)
 	overshoot = overshoot or 1.70158
 	return function(initial, final, time, duration)
@@ -363,6 +381,51 @@ function new_machine()
 		unload=function()
 			nc:stop('triple_glued', glue)
 			nc:stop('triple_produced', set_act_triple)
+		end
+	}
+end
+
+function new_machine_door()
+	local animator = new_animator()
+
+	function close(door)
+		animate(animator, 'close-l', {
+			target=door,
+			attr='lx',
+			fv=64,
+			ease=out_bounce_ease,
+			duration=2
+		})
+
+		animate(animator, 'close-r', {
+			target=door,
+			attr='rx',
+			fv=64,
+			ease=out_bounce_ease,
+			duration=2
+		})
+	end
+
+	return {
+		lx=-1, rx=129,
+		close_ref=nil,
+
+		init=function(self)
+			self.close_ref = function() close(self) end
+			nc:listen('machine_jammed', self.close_ref)
+		end,
+
+		update=function(self)
+			animator:update()
+		end,
+
+		draw=function(self)
+			rectfill(-1, 0, self.lx, 128, 7)
+			rectfill(self.rx, 0, 129, 128, 7)
+		end,
+
+		unload=function(self)
+			nc:stop('machine_jammed', self.close_ref)
 		end
 	}
 end
@@ -717,7 +780,6 @@ function new_particles_pool()
 		end,
 
 		draw=function(self)
-			printh(#particles)
 			for particle in all(particles) do
 				particle:draw()
 			end
@@ -940,7 +1002,7 @@ function new_level(txts, items)
 		dialog:close()
 	end)
 
-	return merged(new_scene({ machine, factory, customer, dialog, new_combo_counter() }), {
+	return merged(new_scene({ machine, factory, customer, dialog, new_combo_counter(), new_machine_door() }), {
 		run=function()
 			dialog:open()
 		end
