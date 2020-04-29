@@ -420,8 +420,14 @@ function new_machine_door()
 		end,
 
 		draw=function(self)
-			rectfill(-1, 0, self.lx, 128, 7)
-			rectfill(self.rx, 0, 129, 128, 7)
+			rectfill(-1, 0, self.lx, 128, 4)
+			rectfill(self.rx, 0, 129, 128, 4)
+			line(self.lx, 0, self.lx, 128, 9)
+			line(self.rx, 0, self.rx, 128, 9)
+			for i=0, 10, 1 do
+				pset(self.lx - 2, i * 12, 9)
+				pset(self.rx + 2, i * 12 + 6, 9)
+			end
 		end,
 
 		unload=function(self)
