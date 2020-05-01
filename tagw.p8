@@ -208,9 +208,16 @@ end
 function new_machine()
 	local act_triple, animator, wcs = nil, new_animator(), {}
 	local ix, iy, fx, fy = 2, 2, 42, 98
+	local request_triple_allowed = true
+
+	function disallow_triple_request()
+		request_triple_allowed = false
+	end
 
 	function request_triple(self)
-		nc:notify(check_game_over() and 'machine_jammed' or 'request_triple')
+		if request_triple_allowed then
+			nc:notify(check_game_over() and 'machine_jammed' or 'request_triple')
+		end
 	end
 
 	function glue()
@@ -340,6 +347,7 @@ function new_machine()
 		max_y=max_y,
 
 		init=function()
+			nc:listen('shop_list_completed', disallow_triple_request)
 			nc:listen('triple_glued', glue)
 			nc:listen('triple_produced', set_act_triple)
 		end,
@@ -379,6 +387,7 @@ function new_machine()
 		end,
 
 		unload=function()
+			nc:stop('shop_list_completed', disallow_triple_request)
 			nc:stop('triple_glued', glue)
 			nc:stop('triple_produced', set_act_triple)
 		end
