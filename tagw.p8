@@ -385,7 +385,7 @@ function new_machine()
 	}
 end
 
-function new_machine_door()
+function new_machine_door(callback)
 	local animator = new_animator()
 
 	function close(door)
@@ -402,7 +402,8 @@ function new_machine_door()
 			attr='rx',
 			fv=64,
 			ease=out_bounce_ease,
-			duration=2
+			duration=2,
+      callback=callback
 		})
 	end
 
@@ -831,6 +832,40 @@ end
 
 -->8
 -- UI
+function new_menu(x, y, w, h, options)
+	local selected_item, visible = 1, false
+
+	function move_selection(direction)
+		selected_item = clamp(selected_item + direction, 1, #options)
+	end
+
+	return {
+    open=function()
+      visible = true
+    end,
+
+		update=function()
+      if not visible then return end
+			move_selection(btnp(g_buttons.d) and 1 or (btnp(g_buttons.u) and -1 or 0))
+
+      if btnp(g_buttons.o) then
+        options[selected_item].callback()
+        visible = false
+      end
+		end,
+
+		draw=function()
+      if not visible then return end
+      rectfill(x, y, x + w, y + h, 0)
+			spr(9, x + 2, y + 2 + (selected_item - 1) * 8)
+			for i=1, #options, 1 do
+				print(options[i].text, x + 14, y + 2 + (i - 1) * 8, i == selected_item and 3 or 7)
+			end
+		end
+	}
+end
+
+
 function new_typped_txt(txt, x, y, callback)
 	local animator, completed, char_idx = new_animator(), false, 1
 
@@ -1002,13 +1037,28 @@ end
 function new_level(txts, items)
 	local machine, factory, customer, dialog = new_machine(), new_factory(), new_customer(items), nil
 
+  local gameover_menu = new_menu(45, 56, 40, 16, {
+    { text='retry', callback=function() printh('retrying...') end },
+    { text='exit', callback=function() printh('exiting...') end }
+  })
+
 	dialog = new_dialog(txts, 1, function()
 		customer:run()
 		machine:run()
 		dialog:close()
 	end)
 
-	return merged(new_scene({ machine, factory, customer, dialog, new_combo_counter(), new_machine_door() }), {
+  local game_objects = {
+    machine,
+    factory,
+    customer,
+    dialog,
+    new_combo_counter(),
+    new_machine_door(function() gameover_menu:open() end),
+    gameover_menu
+  }
+
+	return merged(new_scene(game_objects), {
 		run=function()
 			dialog:open()
 		end
@@ -1043,11 +1093,11 @@ end
 __gfx__
 00000000056666500004400004222140000ddd5000cccc000b300b30000550000009800000000000000000000000000000000000000000000000000000000000
 00000000567777650049940002efee2000dd6dd500cccc00bbbbbbbb005dd5000089880000000000000000000000000000000000000000000000000000000000
-0070070067775776049aa94002e8ee200dd776d50ccaacc03bbba9b3055dd5500899988000000000000000000000000000000000000000000000000000000000
-000770006777557649affa9402e88e20dd7776d50ca9aac00bbaa9b0555d1d550899998800000000000000000000000000000000000000000000000000000000
-000770006775777649affa9402ee8e20d7776dd00caa9ac00baa9bb055d161d5889aa98800000000000000000000000000000000000000000000000000000000
-0070070067577776049aa94002e88e20dd76dd50cca9aaccbba9bbbb55dd11d5889aa98000000000000000000000000000000000000000000000000000000000
-00000000567777650049940002e8ee200dddd500cccaaccc3bbbbbb3055ddd55089aaa9000000000000000000000000000000000000000000000000000000000
+0070070067775776049aa94002e8ee200dd776d50ccaacc03bbba9b3055dd5500899988000bbbbba000000000000000000000000000000000000000000000000
+000770006777557649affa9402e88e20dd7776d50ca9aac00bbaa9b0555d1d5508999988bbb33330000000000000000000000000000000000000000000000000
+000770006775777649affa9402ee8e20d7776dd00caa9ac00baa9bb055d161d5889aa9883b3bb300000000000000000000000000000000000000000000000000
+0070070067577776049aa94002e88e20dd76dd50cca9aaccbba9bbbb55dd11d5889aa9803bb33000000000000000000000000000000000000000000000000000
+00000000567777650049940002e8ee200dddd500cccaaccc3bbbbbb3055ddd55089aaa9003300000000000000000000000000000000000000000000000000000
 0000000005666650000440000412224000dd5000ccc66ccc0b300b3000555550009aa90000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000440000000000ddd500000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000004004000000005555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000
