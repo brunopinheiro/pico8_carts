@@ -39,6 +39,15 @@ local g_characters={
 
 local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
 
+local g_levels={
+	one=function()
+		return new_level(
+			{ 'hello?!', 'is anyone home?' },
+			{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
+		)
+	end
+}
+
 nc = {
 	events={},
 
@@ -1033,6 +1042,42 @@ end
 
 -->8
 -- scenes and levels
+local g_scene_manager = {
+	animator=new_animator(),
+	current_scene=nil,
+	next_scene=nil,
+
+	open=function(self, scene)
+		self.next_scene = scene
+		if self.current_scene then
+			self:close_current_scene()
+		else
+			self:present_next_scene()
+		end
+	end,
+
+	close_current_scene=function(self)
+		self.current_scene:unload()
+		self:present_next_scene()
+	end,
+
+	present_next_scene=function(self)
+		self.current_scene = self.next_scene
+		self.next_scene = nil
+		self.current_scene:init()
+		try_call(self.current_scene, 'run')
+	end,
+
+	update=function(self)
+		self.animator:update()
+		try_call(self.current_scene, 'update')
+	end,
+
+	draw=function(self)
+		try_call(self.current_scene, 'draw')
+	end
+}
+
 function new_scene(objs)
 	objs = objs or {}
 
@@ -1047,7 +1092,8 @@ function new_scene(objs)
 	return {
 		init=for_each('init'),
 		update=for_each('update'),
-		draw=for_each('draw')
+		draw=for_each('draw'),
+		unload=for_each('unload')
 	}
 end
 
@@ -1055,7 +1101,13 @@ function new_splash_scene()
 	local animator, x = new_animator(), 75
 
 	function open_main_menu()
-		printh('open main menu')
+		delayed(animator, 'waiting_to_change', {
+			duration=2,
+			callback=function()
+				g_scene_manager:open(g_levels.one())
+			end
+			}
+		)
 	end
 
 	local logo = {
@@ -1126,30 +1178,20 @@ end
 
 -->8
 -- game loop
-local level_one, splash_level
-
 function _init()
-	--level_one = new_level(
-	--	{ 'hello?!', 'is anyone home?' },
-	--	{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
-	--)
-
+	g_scene_manager:open(new_splash_scene())
 	--level_one:init()
 	--level_one:run()
-	splash_level = new_splash_scene()
-	splash_level:init()
 end
 
 function _update60()
-	--level_one:update()
-	splash_level:update()
+	g_scene_manager:update()
 	g_particles_pool:update()
 end
 
 function _draw()
 	cls()
-	--level_one:draw()
-	splash_level:draw()
+	g_scene_manager:draw()
 	g_particles_pool:draw()
 end
 
