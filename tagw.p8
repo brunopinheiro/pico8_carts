@@ -126,6 +126,14 @@ function linear_ease(initial, final, time, duration)
 	return (final - initial) * time/duration + initial
 end
 
+function steps_ease_with(steps)
+	return function(initial, final, time, duration)
+		local percentage = time/duration
+		local index = clamp(flr(#steps * percentage) + 1, 1, #steps)
+		return steps[index]
+	end
+end
+
 function out_bounce_ease(initial, final, time, duration)
 	local elapsed = time/duration
 	local modifier = 0
@@ -1043,6 +1051,48 @@ function new_scene(objs)
 	}
 end
 
+function new_splash_scene()
+	local animator, x = new_animator(), 75
+
+	function open_main_menu()
+		printh('open main menu')
+	end
+
+	local logo = {
+		y=100,
+		color=7,
+
+		init=function(self)
+			animate(animator, 'down', {
+				target=self,
+				attr='y',
+				fv=120,
+				duration=2,
+				callback=open_main_menu
+			})
+
+			animate(animator, 'fade', {
+				target=self,
+				attr='color',
+				fv=1,
+				duration=2,
+				ease=steps_ease_with({ 7, 6, 5, 0})
+			})
+		end,
+
+		draw=function(self)
+			cls(7)
+			print('pine brothers', x, self.y, self.color)
+		end,
+
+		update=function(self)
+			animator:update()
+		end
+	}
+
+	return new_scene({ logo })
+end
+
 function new_level(txts, items)
 	local machine, factory, customer, dialog = new_machine(), new_factory(), new_customer(items), nil
 
@@ -1076,26 +1126,30 @@ end
 
 -->8
 -- game loop
-local level_one
+local level_one, splash_level
 
 function _init()
-	level_one = new_level(
-		{ 'hello?!', 'is anyone home?' },
-		{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
-	)
+	--level_one = new_level(
+	--	{ 'hello?!', 'is anyone home?' },
+	--	{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
+	--)
 
-	level_one:init()
-	level_one:run()
+	--level_one:init()
+	--level_one:run()
+	splash_level = new_splash_scene()
+	splash_level:init()
 end
 
 function _update60()
-	level_one:update()
+	--level_one:update()
+	splash_level:update()
 	g_particles_pool:update()
 end
 
 function _draw()
 	cls()
-	level_one:draw()
+	--level_one:draw()
+	splash_level:draw()
 	g_particles_pool:draw()
 end
 
