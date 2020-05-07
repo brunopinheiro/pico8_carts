@@ -42,6 +42,7 @@ local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
 local g_levels={
 	one=function()
 		return new_level(
+			'one',
 			{ 'hello?!', 'is anyone home?' },
 			{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
 		)
@@ -56,15 +57,13 @@ nc = {
 		for _, listener in pairs(event_listeners) do listener(params) end
 	end,
 
+	clean=function(self)
+		self.events = {}
+	end,
+
 	listen=function(self, event, handler)
 		self.events[event] = self.events[event] or {}
 		add(self.events[event], handler)
-	end,
-
-	stop=function(self, event, handler)
-		if self.events[event] then
-			remove(self.events[event], handler)
-		end
 	end
 }
 
@@ -401,12 +400,6 @@ function new_machine()
 
 			rect(0, 0, 50, 108, 13)
 			rect(1, 1, 49, 107, 6)
-		end,
-
-		unload=function()
-			nc:stop('shop_list_completed', disallow_triple_request)
-			nc:stop('triple_glued', glue)
-			nc:stop('triple_produced', set_act_triple)
 		end
 	}
 end
@@ -455,10 +448,6 @@ function new_machine_door(callback)
 				pset(self.lx - 2, i * 12, 9)
 				pset(self.rx + 2, i * 12 + 6, 9)
 			end
-		end,
-
-		unload=function(self)
-			nc:stop('machine_jammed', self.close_ref)
 		end
 	}
 end
@@ -660,11 +649,6 @@ function new_factory()
 				spr(next_triple_comps[2].s, 66, 9)
 				spr(next_triple_comps[3].s, 66, 17)
 			end
-		end,
-
-		unload=function()
-			nc:stop('request_triple', produce)
-			nc:stop('needed_comps', update_needed_comps)
 		end
 	}
 end
@@ -782,10 +766,6 @@ function new_customer(needed_items)
 			for assembling_item in all(assembling_items) do
 				assembling_item:draw()
 			end
-		end,
-
-		unload=function()
-			nc:stop('component_unwrapped', store)
 		end
 	}
 end
@@ -1023,11 +1003,6 @@ function new_combo_counter()
 			nc:listen('request_triple', reset_combo)
 		end,
 
-		unload=function(self)
-			nc:listen('comps_unwrapped', count_combo)
-			nc:listen('request_triple', reset_combo)
-		end,
-
 		draw=function(self)
 			if count > 1 then
 				print('combo: '..count, 2, 112, blink and 10 or 8)
@@ -1093,7 +1068,7 @@ function new_scene(objs)
 		init=for_each('init'),
 		update=for_each('update'),
 		draw=for_each('draw'),
-		unload=for_each('unload')
+		unload=function() nc:clean() end
 	}
 end
 
@@ -1145,11 +1120,16 @@ function new_splash_scene()
 	return new_scene({ logo })
 end
 
-function new_level(txts, items)
+function new_level(id, txts, items)
 	local machine, factory, customer, dialog = new_machine(), new_factory(), new_customer(items), nil
 
+	function retry()
+		g_scene_manager:open(g_levels[id]())
+	end
+
+
   local gameover_menu = new_menu(45, 56, 40, 16, {
-    { text='retry', callback=function() printh('retrying...') end },
+    { text='retry', callback=retry },
     { text='exit', callback=function() printh('exiting...') end }
   })
 
