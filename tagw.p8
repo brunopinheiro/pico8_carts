@@ -1079,7 +1079,7 @@ function new_splash_scene()
 		delayed(animator, 'waiting_to_change', {
 			duration=2,
 			callback=function()
-				g_scene_manager:open(g_levels.one())
+				g_scene_manager:open(new_logo_screen())
 			end
 			}
 		)
@@ -1118,6 +1118,18 @@ function new_splash_scene()
 	}
 
 	return new_scene({ logo })
+end
+
+function new_logo_screen()
+	local main_menu = new_menu(45, 56, 40, 24, {
+		{ text='campaign', callback=function() g_scene_manager:open(g_levels.one()) end },
+		{ text='arcade', callback=function() end },
+		{ text='credits', callback=function() end }
+	})
+
+	main_menu:open()
+
+	return new_scene({ main_menu })
 end
 
 function new_level(id, txts, items)
