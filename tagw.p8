@@ -1121,7 +1121,7 @@ function new_splash_scene()
 end
 
 function new_logo_screen()
-	local main_menu = new_menu(45, 56, 40, 24, {
+	local main_menu = new_menu(30, 56, 46, 24, {
 		{ text='campaign', callback=function() g_scene_manager:open(g_levels.one()) end },
 		{ text='arcade', callback=function() end },
 		{ text='credits', callback=function() end }
