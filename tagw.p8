@@ -29,8 +29,19 @@ local g_comps={
 	{s=8,  c=8}  -- fire
 }
 
+function int_hash_from(kvpairs)
+	local hash = {}
+	for kv in all(kvpairs) do
+		hash[kv[1]] = kv[2]
+	end
+	return hash
+end
+
 local g_items={
-	{16,17,32,33} -- night googles
+	{ --night googles
+		sprites={16,17,32,33},
+		comps=int_hash_from({ {1, 10}, {4, 15}, {5, 20} })
+	}
 }
 
 local g_characters={
@@ -38,16 +49,6 @@ local g_characters={
 }
 
 local g_buttons={ l=0, r=1, u=2, d=3, o=4, x=5 }
-
-local g_levels={
-	one=function()
-		return new_level(
-			'one',
-			{ 'hello?!', 'is anyone home?' },
-			{ new_item(1, int_hash_from({ {1, 10}, {4, 15}, {5, 20} })) }
-		)
-	end
-}
 
 nc = {
 	events={},
@@ -72,14 +73,6 @@ function spr4(sprites, x, y)
 	spr(sprites[2], x + 8, y)
 	spr(sprites[3], x, y + 8)
 	spr(sprites[4], x + 8, y + 8)
-end
-
-function int_hash_from(kvpairs)
-	local hash = {}
-	for kv in all(kvpairs) do
-		hash[kv[1]] = kv[2]
-	end
-	return hash
 end
 
 function try_call(obj, method, params)
@@ -653,7 +646,7 @@ function new_factory()
 	}
 end
 
-function new_item(item_idx, needed_comps)
+function new_item(sprites, needed_comps)
 	local animator = new_animator()
 
 	return {
@@ -665,7 +658,7 @@ function new_item(item_idx, needed_comps)
 		end,
 
 		draw=function(self)
-			spr4(g_items[item_idx], self.x, self.y)
+			spr4(sprites, self.x, self.y)
 		end,
 
 		needed_comps=function()
@@ -715,20 +708,14 @@ function new_item(item_idx, needed_comps)
 	}
 end
 
-function new_customer(needed_items)
-	local item, current_item_idx, stored_comps, assembling_items = nil, 0, nil, {}
+function new_arcade_customer()
+	local item, stored_comps, assembling_items = nil, nil, {}
 
 	function order()
-		current_item_idx = current_item_idx + 1
 		stored_comps = {}
-
-		if current_item_idx > #needed_items then
-			item = nil
-			nc:notify('shop_list_completed')
-		else
-			item = needed_items[current_item_idx]
-			nc:notify('needed_comps', item and item.needed_comps() or {})
-		end
+		local item_def = g_items[flr(rnd(#g_items)+1)]
+		item = new_item(item_def.sprites, item_def.comps)
+		nc:notify('needed_comps', item and item.needed_comps() or {})
 	end
 
 	function store(comp)
@@ -871,7 +858,6 @@ function new_menu(x, y, w, h, options)
 	}
 end
 
-
 function new_typped_txt(txt, x, y, callback)
 	local animator, completed, char_idx = new_animator(), false, 1
 
@@ -904,76 +890,6 @@ function new_typped_txt(txt, x, y, callback)
 
 		draw=function(self)
 			print(sub(txt, 1, char_idx), x, y)
-		end
-	}
-end
-
-function new_dialog(speeches, character, callback)
-	local visible, speaking, typped_txt = false, false, nil
-	local current_speech_idx, animator = 1, new_animator()
-
-	function current_txt()
-		return speeches[current_speech_idx]
-	end
-
-	function current_char()
-		return g_characters[character]
-	end
-
-	local next_line
-	next_line = function()
-		if current_speech_idx > #speeches then
-			typped_txt = nil
-			speaking = false
-			callback()
-		else
-			typped_txt = new_typped_txt(current_txt(), 23, 62, next_line)
-			typped_txt:run()
-			current_speech_idx = current_speech_idx + 1
-		end
-	end
-
-	function start_speak()
-		speaking = true
-		next_line()
-	end
-
-	return {
-		l=64, r=64, t=64, b=64,
-
-		open=function(self)
-			visible = true
-			animate(animator, 'open_l', { target=self, attr='l', duration=0.5, fv=2, callback=start_speak })
-			animate(animator, 'open_r', { target=self, attr='r', duration=0.5, fv=126 })
-			animate(animator, 'open_t', { target=self, attr='t', duration=0.3, fv=54 })
-			animate(animator, 'open_b', { target=self, attr='b', duration=0.3, fv=74 })
-		end,
-
-		close=function(self)
-			speaking = false
-			animate(animator, 'open_l', { target=self, attr='l', duration=0.5, fv=64, callback=function() visible = false end })
-			animate(animator, 'open_r', { target=self, attr='r', duration=0.5, fv=64 })
-			animate(animator, 'open_t', { target=self, attr='t', duration=0.3, fv=64 })
-			animate(animator, 'open_b', { target=self, attr='b', duration=0.3, fv=64 })
-		end,
-
-		update=function()
-			animator:update()
-
-			try_call(typped_txt, 'update')
-		end,
-
-		draw=function(self)
-			if not visible then return end
-
-			rectfill(self.l, self.t, self.r, self.b, 7)
-			rect(self.l + 1, self.t + 1, self.r - 1, self.b - 1, 6)
-
-			if speaking then
-				spr4(current_char(), 5, 56)
-			end
-
-			try_call(typped_txt, 'draw')
 		end
 	}
 end
@@ -1122,8 +1038,8 @@ end
 
 function new_logo_screen()
 	local main_menu = new_menu(30, 56, 46, 24, {
-		{ text='campaign', callback=function() g_scene_manager:open(g_levels.one()) end },
-		{ text='arcade', callback=function() end },
+		{ text='arcade', callback=function() g_scene_manager:open(new_arcade_screen()) end },
+		{ text='lore', callback=function() end },
 		{ text='credits', callback=function() end }
 	})
 
@@ -1132,30 +1048,22 @@ function new_logo_screen()
 	return new_scene({ main_menu })
 end
 
-function new_level(id, txts, items)
-	local machine, factory, customer, dialog = new_machine(), new_factory(), new_customer(items), nil
+function new_arcade_screen()
+	local machine, factory, customer = new_machine(), new_factory(), new_arcade_customer()
 
 	function retry()
 		g_scene_manager:open(g_levels[id]())
 	end
-
 
   local gameover_menu = new_menu(45, 56, 40, 16, {
     { text='retry', callback=retry },
     { text='exit', callback=function() printh('exiting...') end }
   })
 
-	dialog = new_dialog(txts, 1, function()
-		customer:run()
-		machine:run()
-		dialog:close()
-	end)
-
   local game_objects = {
     machine,
     factory,
     customer,
-    dialog,
     new_combo_counter(),
     new_machine_door(function() gameover_menu:open() end),
     gameover_menu
@@ -1163,7 +1071,8 @@ function new_level(id, txts, items)
 
 	return merged(new_scene(game_objects), {
 		run=function()
-			dialog:open()
+			customer:run()
+			machine:run()
 		end
 	})
 end
@@ -1172,8 +1081,6 @@ end
 -- game loop
 function _init()
 	g_scene_manager:open(new_splash_scene())
-	--level_one:init()
-	--level_one:run()
 end
 
 function _update60()
