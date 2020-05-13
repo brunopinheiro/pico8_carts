@@ -646,7 +646,7 @@ function new_factory()
 	}
 end
 
-function new_item(sprites, needed_comps)
+function new_item(item_def)
 	local animator = new_animator()
 
 	return {
@@ -658,17 +658,17 @@ function new_item(sprites, needed_comps)
 		end,
 
 		draw=function(self)
-			spr4(sprites, self.x, self.y)
+			spr4(item_def.sprites, self.x, self.y)
 		end,
 
 		needed_comps=function()
 			local comps = {}
-			for comp, _ in pairs(needed_comps) do add(comps, comp) end
+			for comp, _ in pairs(item_def.comps) do add(comps, comp) end
 			return comps
 	  end,
 
 		can_assemble=function(stored_comps)
-			for comp, amount in pairs(needed_comps) do
+			for comp, amount in pairs(item_def.comps) do
 				if (stored_comps[comp] or 0) < amount then
 					return false
 				end
@@ -679,7 +679,7 @@ function new_item(sprites, needed_comps)
 
 		draw_needs=function(self, stored_comps)
 			local count = 0
-			for comp, amount in pairs(needed_comps) do
+			for comp, amount in pairs(item_def.comps) do
 				local needed_amount = clamp(amount - (stored_comps[comp] or 0), 0, amount)
 				local ry = self.y + 16 + (count * 10)
 				spr(comp, self.x - 2, ry)
@@ -713,8 +713,7 @@ function new_arcade_customer()
 
 	function order()
 		stored_comps = {}
-		local item_def = g_items[flr(rnd(#g_items)+1)]
-		item = new_item(item_def.sprites, item_def.comps)
+		item = new_item(g_items[flr(rnd(#g_items)+1)])
 		nc:notify('needed_comps', item and item.needed_comps() or {})
 	end
 
