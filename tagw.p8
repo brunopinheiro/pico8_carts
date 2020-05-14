@@ -909,6 +909,7 @@ function new_combo_counter()
 	end
 
 	function reset_combo()
+		nc:notify('combo_finished', count)
 		count = 0
 		blink = false
 	end
@@ -953,10 +954,14 @@ function new_scoreboard()
 	end
 
 	function count_score()
+		local final_acc_score = acc_score * multiplier
 		visual_score = score
-		score = score + acc_score * multiplier
+		score = score + final_acc_score
 		multiplier = 0
 		acc_score = 0
+
+		nc:notify('acc_score', final_acc_score)
+		nc:notify('score', score)
 
 		delayed(animator, 'score_feedback', {
 			duration=2,
@@ -987,6 +992,50 @@ function new_scoreboard()
 
 		update=function()
 			animator:update()
+		end
+	}
+end
+
+function new_records()
+	local max_combo, max_acc_score, score, deliveries = 0, 0, 0, 0
+	local visible = false
+
+	function check_combo(combo)
+		max_combo = max(max_combo, combo)
+	end
+
+	function check_acc_score(acc_score)
+		max_acc_score = max(max_acc_score, acc_score)
+	end
+
+	function update_score(new_score)
+		score = new_score
+	end
+
+	function increase_delivery()
+		deliveries = deliveries + 1
+	end
+
+	return {
+		init=function()
+			nc:listen('new_order', increase_delivery)
+			nc:listen('score', update_score)
+			nc:listen('acc_score', check_acc_score)
+			nc:listen('combo_finished', check_combo)
+		end,
+
+		show=function()
+			visible = true
+		end,
+
+		draw=function()
+		  if not visible then return end
+
+			rectfill(2, 2, 64, 28, 0)
+			print('max combo:  '..max_combo, 4, 4, 7)
+			print('max earned: '..max_acc_score, 4, 10, 7)
+			print('deliveries: '..deliveries, 4, 16, 7)
+			print('score: '..score, 4, 22, 7)
 		end
 	}
 end
@@ -1079,7 +1128,7 @@ function new_splash_scene()
 				attr='color',
 				fv=1,
 				duration=2,
-				ease=steps_ease_with({ 7, 6, 5, 0})
+				ease=steps_ease_with({ 7, 6, 5, 0 })
 			})
 		end,
 
@@ -1109,10 +1158,14 @@ function new_logo_screen()
 end
 
 function new_arcade_screen()
-	local machine, customer = new_machine(), new_arcade_customer()
+	local machine, customer, records = new_machine(), new_arcade_customer(), new_records()
 
 	function retry()
-		g_scene_manager:open(g_levels[id]())
+		g_scene_manager:open(new_arcade_screen())
+	end
+
+	function exit()
+		g_scene_manager:open(new_logo_screen())
 	end
 
   local gameover_menu = new_menu(45, 56, 40, 16, {
@@ -1126,7 +1179,11 @@ function new_arcade_screen()
     customer,
     new_combo_counter(),
 		new_scoreboard(),
-    new_machine_door(function() gameover_menu:open() end),
+    new_machine_door(function()
+			records:show()
+			gameover_menu:open()
+		end),
+		records,
     gameover_menu
   }
 
