@@ -723,6 +723,7 @@ function new_arcade_customer()
 		if item and item.can_assemble(stored_comps) then
 			item:disappear(function(i) del(assembling_items, i) end)
 			add(assembling_items, item)
+			nc:notify('new_order')
 			order()
 		end
 	end
@@ -920,11 +921,71 @@ function new_combo_counter()
 
 		draw=function(self)
 			if count > 1 then
-				print('combo: '..count, 2, 112, blink and 10 or 8)
+				print('combo: '..count, 2, 120, blink and 10 or 8)
 			end
 		end,
 
 		update=function(self)
+			animator:update()
+		end
+	}
+end
+
+function new_scoreboard()
+	local animator = new_animator()
+	local multiplier, score, acc_score = 0, 0, 0
+	local acc_visible, visual_score, visual_acc_score = false, 0, ''
+
+	function increase_multiplier()
+		multiplier = multiplier + 1
+		update_visual_acc_score()
+	end
+
+	function update_visual_acc_score()
+		if acc_score == 0 then return end
+		acc_visible = true
+		visual_acc_score = '+'..(acc_score * multiplier)
+	end
+
+	function accumulate(value)
+		acc_score = acc_score + value
+		update_visual_acc_score()
+	end
+
+	function count_score()
+		visual_score = score
+		score = score + acc_score * multiplier
+		multiplier = 0
+		acc_score = 0
+
+		delayed(animator, 'score_feedback', {
+			duration=2,
+			callback=function()
+				acc_visible = false
+				visual_acc_score = ''
+				visual_score = score
+			end
+		})
+	end
+
+	return {
+		init=function()
+			nc:listen('comps_unwrapped', increase_multiplier)
+			nc:listen('component_unwrapped', function() accumulate(1) end)
+			nc:listen('new_order', function() accumulate(100) end)
+			nc:listen('request_triple', count_score)
+		end,
+
+		draw=function()
+			rect(0, 110, 76, 126, 7)
+			local score_text = 'score '..visual_score
+			print(score_text, 2, 112, 7)
+			if acc_visible then
+				print(visual_acc_score, 4 + #score_text*4, 112, 3)
+			end
+		end,
+
+		update=function()
 			animator:update()
 		end
 	}
@@ -1048,7 +1109,7 @@ function new_logo_screen()
 end
 
 function new_arcade_screen()
-	local machine, factory, customer = new_machine(), new_factory(), new_arcade_customer()
+	local machine, customer = new_machine(), new_arcade_customer()
 
 	function retry()
 		g_scene_manager:open(g_levels[id]())
@@ -1061,9 +1122,10 @@ function new_arcade_screen()
 
   local game_objects = {
     machine,
-    factory,
+    new_factory(),
     customer,
     new_combo_counter(),
+		new_scoreboard(),
     new_machine_door(function() gameover_menu:open() end),
     gameover_menu
   }
